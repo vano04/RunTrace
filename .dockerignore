@@ -1,0 +1,9 @@
+.git
+.venv
+.uv-cache
+__pycache__
+*.db
+data
+prototype/node_modules
+prototype/dist
+prototype/screenshots

@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: runtrace
+      POSTGRES_USER: runtrace
+      POSTGRES_PASSWORD: runtrace
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runtrace"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - runtrace-postgres:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      RUNTRACE_DATABASE_URL: postgresql+psycopg://runtrace:runtrace@postgres:5432/runtrace
+      RUNTRACE_ARTIFACT_PATH: /data/artifacts
+      RUNTRACE_CORS_ORIGINS: http://localhost:3000
+      RUNTRACE_SEED_DEMO: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - runtrace-artifacts:/data/artifacts
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: ["runtrace-mcp"]
+    environment:
+      RUNTRACE_BASE_URL: http://api:8000
+    depends_on:
+      - api
+    profiles: ["mcp"]
+
+  web:
+    build:
+      context: prototype
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
+
+volumes:
+  runtrace-postgres:
+  runtrace-artifacts:
+

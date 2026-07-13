@@ -1,0 +1,15 @@
+.DS_Store
+.env
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+*.db
+.pytest_cache/
+.coverage
+htmlcov/
+data/artifacts/
+tests/.runtime/
+prototype/node_modules/
+prototype/dist/
+prototype/screenshots/qa-*.png

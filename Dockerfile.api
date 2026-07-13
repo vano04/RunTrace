@@ -1,0 +1,11 @@
+FROM python:3.13-slim
+WORKDIR /app
+COPY pyproject.toml README.md uv.lock ./
+COPY alembic.ini ./
+COPY apps ./apps
+COPY packages ./packages
+RUN pip install --no-cache-dir .
+RUN mkdir -p /data/artifacts
+ENV RUNTRACE_ARTIFACT_PATH=/data/artifacts
+EXPOSE 8000
+CMD ["sh", "-c", "alembic upgrade head && uvicorn runtrace_api.main:app --host 0.0.0.0 --port 8000"]
