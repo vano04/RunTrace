@@ -89,7 +89,7 @@ RUNTRACE_EVENT level=info message="checkpoint saved"`}</Code>
 
         <DocSection id="mcp" title="MCP server" icon={Braces}>
           <p>Run the stdio server to let coding agents retrieve context, propose and claim work, log live evidence, and finish runs without custom integration code.</p>
-          <Code>{`uvx --from 'runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@master' runtrace-mcp
+          <Code>{`uvx --from 'runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@v0.1.0' runtrace-mcp
 
 # Typical agent sequence
 get_project_context({ project: "dense-optimizer" })

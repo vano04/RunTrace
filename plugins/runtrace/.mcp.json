@@ -6,7 +6,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@master",
+        "runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@v0.1.0",
         "runtrace-mcp"
       ],
       "env_vars": ["RUNTRACE_BASE_URL", "RUNTRACE_API_TOKEN"]

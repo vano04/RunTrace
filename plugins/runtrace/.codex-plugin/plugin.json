@@ -1,6 +1,6 @@
 {
   "name": "runtrace",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Persistent experiment memory and run tracking for autonomous research agents.",
   "author": {
     "name": "RunTrace contributors"

@@ -82,13 +82,13 @@ The Next.js server proxies `/api/*` to `INTERNAL_API_URL`, which defaults to `ht
 You do not need to clone the repository on an agent or application host. Install the lightweight CLI directly from GitHub:
 
 ```bash
-uv tool install 'runtrace @ git+https://github.com/vano04/RunTrace.git@master'
+uv tool install 'runtrace @ git+https://github.com/vano04/RunTrace.git@v0.1.0'
 ```
 
 For Python applications:
 
 ```bash
-python -m pip install 'runtrace @ git+https://github.com/vano04/RunTrace.git@master'
+python -m pip install 'runtrace @ git+https://github.com/vano04/RunTrace.git@v0.1.0'
 ```
 
 In normal mode, create a token at **Access → Your agent tokens**, then export `RUNTRACE_BASE_URL` and `RUNTRACE_API_TOKEN`. The CLI can retrieve context, search evidence, and track a command:
@@ -104,7 +104,7 @@ runtrace exec --project <project-slug> --name "new variation" \
 Run the MCP server over stdio without a persistent install:
 
 ```bash
-uvx --from 'runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@master' runtrace-mcp
+uvx --from 'runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@v0.1.0' runtrace-mcp
 ```
 
 ## Codex and Claude Code plugins

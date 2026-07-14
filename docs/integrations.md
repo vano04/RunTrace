@@ -14,14 +14,14 @@ The token is displayed once and stored by RunTrace only as a SHA-256 digest. Kee
 Install the lightweight CLI from GitHub without cloning the repository:
 
 ```bash
-uv tool install 'runtrace @ git+https://github.com/vano04/RunTrace.git@master'
+uv tool install 'runtrace @ git+https://github.com/vano04/RunTrace.git@v0.1.0'
 runtrace --help
 ```
 
 For an isolated one-off invocation:
 
 ```bash
-uvx --from 'runtrace @ git+https://github.com/vano04/RunTrace.git@master' \
+uvx --from 'runtrace @ git+https://github.com/vano04/RunTrace.git@v0.1.0' \
   runtrace search PROJECT "prior evidence"
 ```
 
@@ -30,7 +30,7 @@ Tagged releases attach a wheel and source distribution to GitHub Releases. A man
 ## Python package
 
 ```bash
-python -m pip install 'runtrace @ git+https://github.com/vano04/RunTrace.git@master'
+python -m pip install 'runtrace @ git+https://github.com/vano04/RunTrace.git@v0.1.0'
 ```
 
 ```python
@@ -71,7 +71,7 @@ Or run `runtrace integrations install claude`, then restart Claude Code after ex
 Any stdio MCP host can run:
 
 ```bash
-uvx --from 'runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@master' runtrace-mcp
+uvx --from 'runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@v0.1.0' runtrace-mcp
 ```
 
 The host needs `uv`, `RUNTRACE_BASE_URL`, and `RUNTRACE_API_TOKEN`. Its first launch needs network access to GitHub and the Python package index.
