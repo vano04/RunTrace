@@ -6,7 +6,7 @@ import { toast } from "sonner"
 
 import { useAuth } from "@/components/auth-provider"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 export function AccountMenu() {
   const { identity, signOut, status } = useAuth()
@@ -20,7 +20,9 @@ export function AccountMenu() {
         <span className="hidden max-w-36 truncate sm:inline">{identity.username}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel><span className="block truncate text-foreground">{identity.username}</span><span className="block font-normal capitalize">{identity.role}</span></DropdownMenuLabel>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel><span className="block truncate text-foreground">{identity.username}</span><span className="block font-normal capitalize">{identity.role}</span></DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         {identity.role !== "member" ? <DropdownMenuItem render={<Link href="/access" />}><ShieldCheck />Access</DropdownMenuItem> : null}
         <DropdownMenuItem render={<Link href="/account" />}><KeyRound />{identity.password_set === false ? "Set password" : "Change password"}</DropdownMenuItem>
