@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AppearanceProvider } from "@/components/appearance-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider } from "@/components/auth-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,7 +23,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <AppearanceProvider>
-          <TooltipProvider>{children}<Toaster richColors /></TooltipProvider>
+          <TooltipProvider><AuthProvider>{children}</AuthProvider><Toaster richColors /></TooltipProvider>
         </AppearanceProvider>
       </body>
     </html>

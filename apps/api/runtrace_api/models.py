@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -37,6 +37,68 @@ class Project(Base):
     experiments: Mapped[list[Experiment]] = relationship(back_populates="project", cascade="all, delete-orphan")
     runs: Mapped[list[Run]] = relationship(back_populates="project", cascade="all, delete-orphan")
     tag_definitions: Mapped[list[TagDefinition]] = relationship(back_populates="project", cascade="all, delete-orphan")
+
+
+class Identity(Base):
+    __tablename__ = "identities"
+    __table_args__ = (
+        Index("uq_identities_single_owner", "role", unique=True, postgresql_where=text("role = 'owner'"), sqlite_where=text("role = 'owner'")),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("identity"))
+    name: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    role: Mapped[str] = mapped_column(String(32), default="member", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    setup_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    setup_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+    passkeys: Mapped[list[PasskeyCredential]] = relationship(back_populates="identity", cascade="all, delete-orphan")
+    sessions: Mapped[list[AuthSession]] = relationship(back_populates="identity", cascade="all, delete-orphan")
+
+
+class PasskeyCredential(Base):
+    __tablename__ = "passkey_credentials"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("passkey"))
+    identity_id: Mapped[str] = mapped_column(ForeignKey("identities.id", ondelete="CASCADE"), index=True)
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary)
+    sign_count: Mapped[int] = mapped_column(Integer, default=0)
+    device_type: Mapped[str] = mapped_column(String(32), default="single_device")
+    backed_up: Mapped[bool] = mapped_column(Boolean, default=False)
+    transports: Mapped[list[str]] = mapped_column(JSON, default=list)
+    name: Mapped[str] = mapped_column(String(120), default="Passkey")
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    identity: Mapped[Identity] = relationship(back_populates="passkeys")
+
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("session"))
+    identity_id: Mapped[str] = mapped_column(ForeignKey("identities.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    identity: Mapped[Identity] = relationship(back_populates="sessions")
+
+
+class AuthCeremony(Base):
+    __tablename__ = "auth_ceremonies"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("ceremony"))
+    ceremony: Mapped[str] = mapped_column(String(32), index=True)
+    challenge: Mapped[bytes] = mapped_column(LargeBinary)
+    identity_id: Mapped[str | None] = mapped_column(ForeignKey("identities.id", ondelete="CASCADE"), index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
 class TagDefinition(Base):

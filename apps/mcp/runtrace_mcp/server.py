@@ -79,6 +79,12 @@ def claim_experiment(project: str, worker_id: str, experiment_id: str | None = N
 
 
 @mcp.tool()
+def release_experiment(project: str, experiment_id: str, worker_id: str) -> dict[str, Any]:
+    """Return a pending claim to proposed when an autoresearch loop stops before starting a run."""
+    return request("POST", f"/api/v1/projects/{project}/experiments/{experiment_id}/release", {"worker_id": worker_id})
+
+
+@mcp.tool()
 def create_run(project: str, name: str, hypothesis: str, reasoning: str = "", experiment_id: str | None = None, evidence_used: list[dict[str, Any]] | None = None, decision_changed: str = "", configuration: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create and start a tracked run, ideally citing retrieved evidence."""
     return request("POST", f"/api/v1/projects/{project}/runs", {"name": name, "hypothesis": hypothesis, "reasoning": reasoning, "experiment_id": experiment_id, "evidence_used": evidence_used or [], "decision_changed": decision_changed, "configuration": configuration or {}})

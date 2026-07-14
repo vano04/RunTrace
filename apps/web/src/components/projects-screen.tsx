@@ -6,6 +6,7 @@ import { ArrowRight, BookOpen, FolderKanban, Search } from "lucide-react"
 import { toast } from "sonner"
 
 import { AppSettingsDialog } from "@/components/app-settings-dialog"
+import { AccountMenu } from "@/components/account-menu"
 import { useAppearance } from "@/components/appearance-provider"
 import { CreateProjectDialog } from "@/components/create-project-dialog"
 import { RunTraceLogo } from "@/components/runtrace-logo"
@@ -45,6 +46,7 @@ export function ProjectsScreen() {
         <div className="flex items-center gap-1">
           <Button variant="ghost" render={<Link href="/docs" />} nativeButton={false}><BookOpen data-icon="inline-start" />Docs</Button>
           <AppSettingsDialog />
+          <AccountMenu />
         </div>
       </header>
       <section className="py-8 sm:py-12">

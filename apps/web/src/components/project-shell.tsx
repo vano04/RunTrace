@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import { Archive, ArrowLeft, BookOpen, LayoutDashboard, Menu, Search, Settings } from "lucide-react"
 
 import { RunTraceLogo } from "@/components/runtrace-logo"
+import { AccountMenu } from "@/components/account-menu"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
@@ -39,6 +40,7 @@ function ProjectNavigation({ project, mobile = false }: { project: Project; mobi
       </nav>
       <div className="mt-auto border-t p-3">
         <Button variant="ghost" className="w-full justify-start" render={<Link href="/docs" />} nativeButton={false}><BookOpen data-icon="inline-start" />Docs</Button>
+        <div className="mt-1"><AccountMenu /></div>
         {mobile ? <p className="px-3 pt-2 text-xs text-muted-foreground">RunTrace v0.1</p> : null}
       </div>
     </div>

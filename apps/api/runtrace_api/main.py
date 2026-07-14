@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shutil
 from collections import Counter
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -18,6 +19,7 @@ from sqlalchemy import and_, delete, desc, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from .config import ROOT, settings
+from .auth import authenticate_request, router as auth_router
 from .database import SessionLocal, get_db
 from .embeddings import index_document, semantic_matches
 from .models import (
@@ -64,7 +66,19 @@ from .seed import seed_demo
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     startup()
-    yield
+    demo_tasks = (
+        [asyncio.create_task(demo_metric_loop()), asyncio.create_task(demo_claim_loop())]
+        if settings.seed_demo
+        else []
+    )
+    try:
+        yield
+    finally:
+        for task in demo_tasks:
+            task.cancel()
+        for task in demo_tasks:
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 app = FastAPI(
@@ -80,6 +94,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.middleware("http")(authenticate_request)
+app.include_router(auth_router)
 
 AUTORESEARCH_COMPLETION_STEP = 3350
 AUTORESEARCH_EARLY_RUNTIME_SECONDS = 4000
@@ -96,6 +112,43 @@ def startup() -> None:
     if settings.seed_demo:
         with SessionLocal() as session:
             seed_demo(session)
+            requeue_expired_claims(session)
+
+
+async def demo_metric_loop() -> None:
+    """Advance the seeded live run by one 100-step point every ten seconds."""
+    while True:
+        await asyncio.sleep(10)
+        with SessionLocal() as session:
+            run = session.scalar(select(Run).where(Run.id == "run_174", Run.lifecycle == "running"))
+            if not run or not (run.configuration or {}).get("demo_metric_loop"):
+                continue
+            latest_step = session.scalar(select(func.max(RunMetric.step)).where(RunMetric.run_id == run.id, RunMetric.name == "validation_loss"))
+            if latest_step is not None and latest_step >= 1000:
+                session.execute(delete(RunMetric).where(RunMetric.run_id == run.id, RunMetric.name == "validation_loss"))
+                next_step = 0
+            else:
+                next_step = (latest_step or 0) + 100
+            value = round(3.62 - 0.00036 * next_step, 4)
+            session.add(RunMetric(run_id=run.id, name="validation_loss", value=value, step=next_step, timestamp=now_utc(), context={"demo": True}))
+            run.updated_at = now_utc()
+            session.commit()
+
+
+async def demo_claim_loop() -> None:
+    """Keep the seeded autoresearch claims alive while the demo worker is running."""
+    workers = {"exp_022": "autoresearch/Jul4", "exp_024": "autoresearch/Jul5"}
+    while True:
+        with SessionLocal() as session:
+            claimed_at = now_utc()
+            experiments = session.scalars(select(Experiment).where(Experiment.id.in_(workers))).all()
+            for experiment in experiments:
+                expected_worker = workers[experiment.id]
+                if experiment.lifecycle == "pending" and experiment.claimed_by == expected_worker:
+                    experiment.claimed_at = claimed_at
+                    experiment.updated_at = claimed_at
+            session.commit()
+        await asyncio.sleep(max(10, settings.claim_timeout_seconds // 3))
 
 
 def get_project(session: Session, identifier: str) -> Project:
@@ -148,6 +201,30 @@ def latest_program(session: Session, project_id: str) -> ProgramVersion | None:
 
 def latest_exclusions(session: Session, project_id: str) -> ExclusionVersion | None:
     return session.scalar(select(ExclusionVersion).where(ExclusionVersion.project_id == project_id).order_by(desc(ExclusionVersion.version)).limit(1))
+
+
+def requeue_expired_claims(session: Session, project_id: str | None = None) -> int:
+    cutoff = now_utc() - timedelta(seconds=settings.claim_timeout_seconds)
+    query = select(Experiment).where(
+        Experiment.lifecycle == "pending",
+        Experiment.claimed_at.is_not(None),
+        Experiment.claimed_at < cutoff,
+        Experiment.archived_at.is_(None),
+        Experiment.deleted_at.is_(None),
+    )
+    if project_id:
+        query = query.where(Experiment.project_id == project_id)
+    expired = list(session.scalars(query))
+    for item in expired:
+        previous_worker = item.claimed_by
+        item.lifecycle = "proposed"
+        item.claimed_by = None
+        item.claimed_at = None
+        item.updated_at = now_utc()
+        audit(session, item.project_id, "experiment.claim_expired", "experiment", item.id, "system", None, {"previous_worker": previous_worker})
+    if expired:
+        session.commit()
+    return len(expired)
 
 
 def available_metric_names(session: Session, project_id: str) -> list[str]:
@@ -350,6 +427,16 @@ def read_project(project: str, session: Session = Depends(get_db)) -> Project:
     return get_project(session, project)
 
 
+@app.delete("/api/v1/projects/{project}", status_code=204)
+def delete_project(project: str, session: Session = Depends(get_db)) -> None:
+    current = get_project(session, project)
+    run_ids = list(session.scalars(select(Run.id).where(Run.project_id == current.id)))
+    session.delete(current)
+    session.commit()
+    for run_id in run_ids:
+        shutil.rmtree(settings.artifact_path / run_id, ignore_errors=True)
+
+
 @app.patch("/api/v1/projects/{project}", response_model=ProjectRead)
 def update_project(project: str, body: ProjectUpdate, session: Session = Depends(get_db)) -> Project:
     current = get_project(session, project)
@@ -460,6 +547,7 @@ def list_experiments(
     session: Session = Depends(get_db),
 ) -> list[Experiment]:
     current = get_project(session, project)
+    requeue_expired_claims(session, current.id)
     query = select(Experiment).where(Experiment.project_id == current.id, Experiment.deleted_at.is_(None))
     if lifecycle:
         query = query.where(Experiment.lifecycle == lifecycle)
@@ -516,6 +604,7 @@ def update_experiment(
 @app.post("/api/v1/projects/{project}/experiments/claim", response_model=ExperimentRead)
 def claim_next(project: str, body: ClaimRequest, session: Session = Depends(get_db)) -> Experiment:
     current = get_project(session, project)
+    requeue_expired_claims(session, current.id)
     for _ in range(5):
         candidate = session.scalar(
             select(Experiment.id)
@@ -542,6 +631,7 @@ def claim_next(project: str, body: ClaimRequest, session: Session = Depends(get_
 @app.post("/api/v1/projects/{project}/experiments/{identifier}/claim", response_model=ExperimentRead)
 def claim_experiment(project: str, identifier: str, body: ClaimRequest, session: Session = Depends(get_db)) -> Experiment:
     current = get_project(session, project)
+    requeue_expired_claims(session, current.id)
     item = get_experiment(session, current, identifier)
     claimed_at = now_utc()
     result = session.execute(
@@ -555,6 +645,24 @@ def claim_experiment(project: str, identifier: str, body: ClaimRequest, session:
     audit(session, current.id, "experiment.claimed", "experiment", item.id, body.worker_id, body.request_id)
     session.commit()
     return get_experiment(session, current, item.id)
+
+
+@app.post("/api/v1/projects/{project}/experiments/{identifier}/release", response_model=ExperimentRead)
+def release_experiment(project: str, identifier: str, body: ClaimRequest, session: Session = Depends(get_db)) -> Experiment:
+    current = get_project(session, project)
+    item = get_experiment(session, current, identifier)
+    if item.lifecycle != "pending":
+        raise HTTPException(409, "Only pending experiments can be released")
+    if item.claimed_by and item.claimed_by != body.worker_id:
+        raise HTTPException(409, "Experiment is claimed by another worker")
+    item.lifecycle = "proposed"
+    item.claimed_by = None
+    item.claimed_at = None
+    item.updated_at = now_utc()
+    audit(session, current.id, "experiment.released", "experiment", item.id, body.worker_id, body.request_id)
+    session.commit()
+    session.refresh(item)
+    return item
 
 
 def set_archive_state(project: str, identifier: str, archived: bool, actor: str, request_id: str | None, session: Session) -> Experiment:
@@ -904,6 +1012,7 @@ def search_get(project: str, q: str = "", include_archived: bool = False, includ
 @app.get("/api/v1/projects/{project}/context")
 def project_context(project: str, session: Session = Depends(get_db)) -> dict:
     current = get_project(session, project)
+    requeue_expired_claims(session, current.id)
     program = latest_program(session, current.id)
     exclusions = latest_exclusions(session, current.id)
     baseline = get_run(session, current.current_baseline_run_id) if current.current_baseline_run_id else None
@@ -977,6 +1086,7 @@ def progress(project: str, metric: str | None = None, window: str = "all", inclu
 @app.get("/api/v1/projects/{project}/dashboard")
 def dashboard(project: str, session: Session = Depends(get_db)) -> dict:
     current = get_project(session, project)
+    requeue_expired_claims(session, current.id)
     experiments = session.scalars(select(Experiment).where(Experiment.project_id == current.id, Experiment.deleted_at.is_(None)).order_by(Experiment.priority)).all()
     runs = session.scalars(select(Run).options(selectinload(Run.metrics), selectinload(Run.events), selectinload(Run.parameters), selectinload(Run.artifacts)).where(Run.project_id == current.id, Run.deleted_at.is_(None)).order_by(desc(Run.created_at))).all()
     active_experiments = [item for item in experiments if not item.archived_at]

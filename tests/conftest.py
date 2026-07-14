@@ -7,6 +7,7 @@ TEST_ROOT.mkdir(exist_ok=True)
 os.environ["RUNTRACE_DATABASE_URL"] = f"sqlite:///{TEST_ROOT / 'test.db'}"
 os.environ["RUNTRACE_ARTIFACT_PATH"] = str(TEST_ROOT / "artifacts")
 os.environ["RUNTRACE_SEED_DEMO"] = "true"
+os.environ["RUNTRACE_DEV"] = "true"
 
 
 import pytest  # noqa: E402
@@ -22,4 +23,3 @@ def fresh_database():
     Base.metadata.create_all(engine)
     with TestClient(app) as client:
         yield client
-

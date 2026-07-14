@@ -1,5 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import select
+
+from runtrace_api.database import SessionLocal
+from runtrace_api.models import Experiment
 
 
 def test_project_context_is_scoped_and_complete(fresh_database):
@@ -28,6 +33,45 @@ def test_atomic_claim_allows_only_one_worker(fresh_database):
     winner = next(response.json() for response in responses if response.status_code == 200)
     assert winner["lifecycle"] == "pending"
     assert winner["claimed_by"] in {"worker-a", "worker-b"}
+
+
+def test_seed_has_two_autoresearch_claims_and_claim_can_be_released(fresh_database):
+    dashboard = fresh_database.get("/api/v1/projects/dense-optimizer/dashboard").json()
+    pending = [item for item in dashboard["experiments"] if item["lifecycle"] == "pending"]
+    assert {item["claimed_by"] for item in pending} == {"autoresearch/Jul4", "autoresearch/Jul5"}
+
+    released = fresh_database.post(
+        "/api/v1/projects/dense-optimizer/experiments/EXP-022/release",
+        json={"worker_id": "autoresearch/Jul4"},
+    )
+    assert released.status_code == 200
+    assert released.json()["lifecycle"] == "proposed"
+    assert released.json()["claimed_by"] is None
+
+
+def test_abandoned_claim_returns_to_proposed_after_timeout(fresh_database):
+    claimed = fresh_database.post(
+        "/api/v1/projects/dense-optimizer/experiments/EXP-021/claim",
+        json={"worker_id": "autoresearch/failed-loop"},
+    )
+    assert claimed.status_code == 200
+    with SessionLocal() as session:
+        item = session.scalar(select(Experiment).where(Experiment.id == "exp_021"))
+        assert item
+        item.claimed_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+        session.commit()
+
+    dashboard = fresh_database.get("/api/v1/projects/dense-optimizer/dashboard").json()
+    returned = next(item for item in dashboard["experiments"] if item["display_id"] == "EXP-021")
+    assert returned["lifecycle"] == "proposed"
+    assert returned["claimed_by"] is None
+
+
+def test_project_delete_removes_it_from_project_list(fresh_database):
+    response = fresh_database.delete("/api/v1/projects/flash-attention-kernel")
+    assert response.status_code == 204
+    assert fresh_database.get("/api/v1/projects/flash-attention-kernel").status_code == 404
+    assert "flash-attention-kernel" not in {item["slug"] for item in fresh_database.get("/api/v1/projects").json()}
 
 
 def test_archive_excludes_active_search_and_context_then_restore(fresh_database):
@@ -134,6 +178,22 @@ def test_progress_normalizes_comparable_completed_runs(fresh_database):
     assert [point["is_improvement"] for point in payload["series"]] == [True, True, False, False]
     assert [point["best_value"] for point in payload["series"]] == [3.28, 3.27, 3.27, 3.27]
     assert all("improvement" in point and "raw_value" in point for point in payload["series"])
+
+
+def test_demo_curves_cover_step_range_at_readable_intervals(fresh_database):
+    payload = fresh_database.get("/api/v1/runs/RUN-168").json()
+    steps = [point["step"] for point in payload["metrics"]["validation_loss"]["points"]]
+    assert steps[0] == 0
+    assert steps[-1] == 1000
+    assert all(100 <= right - left <= 200 for left, right in zip(steps, steps[1:]))
+
+
+def test_live_demo_run_starts_at_zero_and_declares_ten_second_loop(fresh_database):
+    payload = fresh_database.get("/api/v1/runs/RUN-174").json()
+    assert payload["lifecycle"] == "running"
+    assert payload["configuration"]["point_interval_seconds"] == 10
+    assert payload["configuration"]["max_step"] == 1000
+    assert [point["step"] for point in payload["metrics"]["validation_loss"]["points"]] == [0]
 
 
 def test_search_browse_results_include_sort_metadata(fresh_database):

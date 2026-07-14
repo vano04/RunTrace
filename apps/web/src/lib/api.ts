@@ -29,6 +29,7 @@ export const runtrace = {
   projects: () => api<Project[]>("/api/v1/projects"),
   createProject: (body: { name: string; slug: string; description: string; repository_url?: string }) =>
     api<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(body) }),
+  deleteProject: (slug: string) => api<void>(`/api/v1/projects/${slug}`, { method: "DELETE" }),
   dashboard: (slug: string) => api<Dashboard>(`/api/v1/projects/${slug}/dashboard`),
   progress: (slug: string, metric = "", window = "all", includeTags: string[] = [], excludeTags: string[] = []) => {
     const params = new URLSearchParams({ window })

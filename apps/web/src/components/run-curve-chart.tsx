@@ -70,8 +70,8 @@ export function RunCurveChart({ run, baseline, metric }: { run: Run; baseline: R
         {tickSteps.map((step) => <g key={step}><line x1={padLeft + (step / maxStep) * plotWidth} x2={padLeft + (step / maxStep) * plotWidth} y1={padTop} y2={height - padBottom} className="stroke-border/60" strokeDasharray="3 5" /><text x={padLeft + (step / maxStep) * plotWidth} y={height - 14} textAnchor="middle" className="fill-muted-foreground text-[10px] font-mono">{step.toLocaleString()}</text></g>)}
         {baselinePath ? <path d={baselinePath} fill="none" className="stroke-muted-foreground" strokeWidth="2" strokeDasharray="7 5" strokeLinecap="round" strokeLinejoin="round" /> : null}
         {runPath ? <path d={runPath} fill="none" className="stroke-primary" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /> : null}
-        {runPoints.length ? <circle cx={x(lastRunPoint!, runPoints.length - 1)} cy={y(lastRunPoint!.value)} r="5" className="fill-background stroke-primary" strokeWidth="2" /> : null}
-        {baselinePoints.length && baseline?.id !== run.id ? <circle cx={x(lastBaselinePoint!, baselinePoints.length - 1)} cy={y(lastBaselinePoint!.value)} r="4" className="fill-background stroke-muted-foreground" strokeWidth="2" /> : null}
+        {baseline?.id !== run.id ? baselinePoints.map((point, index) => <circle key={`baseline-${point.step ?? index}-${point.timestamp}`} cx={x(point, index)} cy={y(point.value)} r={point === lastBaselinePoint ? 4.5 : 3} className="fill-background stroke-muted-foreground" strokeWidth="2" />) : null}
+        {runPoints.map((point, index) => <circle key={`run-${point.step ?? index}-${point.timestamp}`} cx={x(point, index)} cy={y(point.value)} r={point === lastRunPoint ? 5 : 3.5} className="fill-background stroke-primary" strokeWidth="2" />)}
       </svg>
       <p className="mt-1 text-center text-xs text-muted-foreground">step 0 – {maxStep.toLocaleString()} · {metric} · lower values are better</p>
     </div>

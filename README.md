@@ -32,13 +32,27 @@ The application starts empty. Create the first project in the web app or through
 docker compose up --build
 ```
 
+The default stack stores projects and experiment data in the persistent PostgreSQL volume. Stopping and starting Compose reloads that data; use `docker compose down -v` only when you intend to erase it.
+
+For the seeded, no-auth development preview, set the development flag on startup:
+
+```bash
+RUNTRACE_DEV=true docker compose up --build
+```
+
+Demo records are inserted only when the database is empty. Run `./scripts/reset-demo.sh` to recreate the preview from a clean volume.
+
+In normal mode, a new instance opens with name-only owner onboarding and passkey enrollment. The owner can create Admin or Member identities from the Access panel and share one-time passkey setup links. Configure the deployment's stable WebAuthn hostname and HTTPS origin before enrollment; see [`docs/auth.md`](docs/auth.md).
+
+See [`docs/README.md`](docs/README.md) for the deployment-mode contract, persistence details, seeded-data invariants, modal behavior, and future-task verification checklist.
+
 Open:
 
 - Web app: `http://localhost:3000`
 - API health: `http://localhost:8000/health`
 - Interactive API reference: `http://localhost:8000/docs`
 
-The embedding model is downloaded into the `runtrace-models` Docker volume when semantic indexing is first needed. Keyword retrieval remains available if the model cannot be loaded.
+Keyword retrieval is enabled in the default Compose stack. Native deployments can enable semantic embeddings with `RUNTRACE_EMBEDDINGS_ENABLED=true`.
 
 To clear all database, artifact, and model volumes:
 

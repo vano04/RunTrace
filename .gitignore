@@ -11,5 +11,6 @@ htmlcov/
 data/artifacts/
 tests/.runtime/
 prototype/node_modules/
+prototype/.npm-cache/
 prototype/dist/
 prototype/screenshots/qa-*.png
