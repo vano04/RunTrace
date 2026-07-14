@@ -9,6 +9,8 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels '.[server,mcp,embeddings]'
 
 FROM python:3.13-slim AS runtime
 WORKDIR /app
+LABEL org.opencontainers.image.source="https://github.com/vano04/RunTrace"
+LABEL org.opencontainers.image.description="RunTrace API, CLI, SDK, and MCP runtime"
 COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir /wheels/* \
     && rm -rf /wheels \

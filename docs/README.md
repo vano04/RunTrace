@@ -10,6 +10,14 @@ Normal mode is empty, persistent, and protected by browser passkeys:
 docker compose up -d --build
 ```
 
+The release images can be deployed without a source build:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
+
+This pulls `ghcr.io/vano04/runtrace` and `ghcr.io/vano04/runtrace-web`. Both default to the version in `RUNTRACE_VERSION` or `0.1.0` and are published for Linux AMD64 and ARM64.
+
 Development mode is unauthenticated and seeds an empty database:
 
 ```bash

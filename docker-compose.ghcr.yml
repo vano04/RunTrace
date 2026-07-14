@@ -1,0 +1,12 @@
+services:
+  api:
+    image: ghcr.io/vano04/runtrace:${RUNTRACE_VERSION:-0.1.0}
+    build: !reset null
+
+  mcp:
+    image: ghcr.io/vano04/runtrace:${RUNTRACE_VERSION:-0.1.0}
+    build: !reset null
+
+  web:
+    image: ghcr.io/vano04/runtrace-web:${RUNTRACE_VERSION:-0.1.0}
+    build: !reset null

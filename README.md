@@ -37,6 +37,14 @@ docker compose up --build
 
 Open <http://localhost:3000>. On a fresh database, the first browser enrolls the instance owner and a passkey. Data is stored in named PostgreSQL and artifact volumes and survives `docker compose down`.
 
+To deploy the published multi-architecture GitHub Container packages instead of building locally:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
+
+The images are `ghcr.io/vano04/runtrace:0.1.0` for the API/CLI/MCP runtime and `ghcr.io/vano04/runtrace-web:0.1.0` for the dashboard. Set `RUNTRACE_VERSION` to select another release.
+
 Useful endpoints:
 
 - web app: <http://localhost:3000>
@@ -151,6 +159,7 @@ UV_CACHE_DIR=.uv-cache uv build
 npm --prefix apps/web run lint
 npm --prefix apps/web run build
 docker compose config
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml config
 RUNTRACE_DEV=true docker compose config
 ```
 

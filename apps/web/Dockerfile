@@ -13,6 +13,8 @@ RUN npm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
+LABEL org.opencontainers.image.source="https://github.com/vano04/RunTrace"
+LABEL org.opencontainers.image.description="RunTrace web dashboard"
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
