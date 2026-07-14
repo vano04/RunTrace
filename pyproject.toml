@@ -34,7 +34,6 @@ server = [
   "python-multipart>=0.0.20,<1",
   "sqlalchemy>=2.0,<3",
   "uvicorn[standard]>=0.35,<1",
-  "webauthn>=3,<4",
 ]
 embeddings = ["fastembed>=0.7,<1"]
 dev = [

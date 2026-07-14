@@ -1,44 +1,65 @@
 # Instance authentication
 
-RunTrace normal mode is passwordless and instance-scoped. An identity consists of a display name, a role, and one or more passkeys. It does not have an email address, username, phone number, or password.
+RunTrace normal mode uses instance-scoped identities with a display name,
+password, role, and status. It does not require an email address or external
+identity provider.
 
 ## First-run contract
 
-When the `identities` table is empty, data API requests return `428` and the web app shows owner onboarding. Completing WebAuthn registration atomically creates the sole `owner`, stores the credential public key and metadata, and starts an opaque server-side session. A concurrent second bootstrap attempt is rejected.
+When the identities table is empty, data API requests return `428` and the web
+app shows owner onboarding. The first completed setup atomically creates the
+sole owner, stores a salted scrypt password hash, and starts an opaque
+server-side session. RunTrace never stores plaintext passwords.
 
-After the owner exists, unauthenticated data API requests return `401`. The health endpoint and the endpoints needed to begin or finish a WebAuthn ceremony remain public.
+Passwords must contain at least 12 characters. Use a password manager to
+generate and store a unique password.
+
+When upgrading an instance that already has a passkey-era owner, an existing
+browser session can set a password from the account menu. If no session remains,
+or the owner password is lost, set `RUNTRACE_OWNER_RECOVERY_PASSWORD` to a
+temporary password of at least 12 characters for one startup, sign in, and then
+remove the variable. Applying a recovery password revokes the owner's browser
+sessions.
 
 ## Roles and access
 
-- `owner` has full access and cannot be demoted, suspended, or left without a passkey.
-- `admin` can use the app and manage identities, roles, setup links, suspension, and passkey revocation.
-- `member` can use the app but cannot manage instance access.
+- `owner` has full access and cannot be demoted or suspended.
+- `admin` can use the app and manage identities, roles, setup links, and suspension.
+- `member` can use projects and runs but cannot manage instance access.
 
-Admins create a name-only identity and receive a random one-time setup link. The token is stored only as a SHA-256 digest, expires after 24 hours by default, and is invalidated after enrollment. Creating a replacement link invalidates the previous one.
+Admins create a name-only identity and receive a random one-time setup link.
+The recipient uses it to choose a password. The token is stored only as a
+SHA-256 digest, expires after 24 hours by default, and is invalidated after
+setup. Creating a replacement link invalidates the previous one. Suspending an
+identity deletes its sessions and API tokens.
 
-Suspending an identity or revoking one of its passkeys deletes all of that identity's sessions. A passkey may belong to only one identity. Private key material never leaves the authenticator and is never sent to RunTrace.
+## Sessions and transport security
 
-## Sessions and deployment
+Successful password verification creates a random opaque session token. Only
+its SHA-256 digest is persisted. The browser receives an `HttpOnly`,
+`SameSite=Lax` cookie, and sessions expire after seven days by default.
 
-Successful passkey verification creates a random opaque session token. Only its SHA-256 digest is persisted. The browser receives the token in an `HttpOnly`, `SameSite=Lax` cookie; it is also marked `Secure` whenever every configured WebAuthn origin uses HTTPS. Sessions expire after seven days by default.
-
-Configure these values before enrolling passkeys:
+For a trusted LAN deployment over plain HTTP, use:
 
 ```env
-RUNTRACE_DEV=false
-RUNTRACE_WEBAUTHN_RP_ID=runtrace.example.com
-RUNTRACE_WEBAUTHN_RP_NAME=RunTrace
-RUNTRACE_WEBAUTHN_ORIGINS=https://runtrace.example.com
-RUNTRACE_SESSION_TTL_HOURS=168
-RUNTRACE_SETUP_LINK_TTL_HOURS=24
+RUNTRACE_SECURE_SESSION_COOKIE=false
 ```
 
-Changing the RP ID or public origin makes existing passkeys unusable. Production deployments should use HTTPS and a stable hostname.
+Plain HTTP does not protect passwords or session cookies from interception by
+other devices on the network. Use HTTPS for untrusted networks and set:
 
-Normal mode authenticates browser requests with the passkey session cookie and headless clients with bearer tokens. Any signed-in identity can create tokens under **Access → Your agent tokens**. A token is displayed only once; RunTrace stores its SHA-256 digest, visible prefix, name, timestamps, and optional expiry. Revocation is immediate. Suspending an identity revokes all of its sessions and tokens.
+```env
+RUNTRACE_SECURE_SESSION_COOKIE=true
+```
 
-Clients should send `Authorization: Bearer <token>` and normally read the secret from `RUNTRACE_API_TOKEN`. Do not put tokens in source code, plugin manifests, URLs, logs, or RunTrace records. Use a separate named token for each host so it can be revoked without interrupting other agents.
+Normal mode authenticates browser requests with the session cookie and
+headless clients with bearer tokens. Any signed-in identity can create tokens
+under **Access → Your agent tokens**. A token is displayed only once; RunTrace
+stores its SHA-256 digest, visible prefix, name, timestamps, and optional
+expiry. Revocation is immediate.
 
-## Development split
+## Development mode
 
-`RUNTRACE_DEV=true` is intentionally unauthenticated. It synthesizes owner access for every request and keeps the seeded preview and existing test workflows free of onboarding. Do not expose this mode outside a trusted development machine.
+`RUNTRACE_DEV=true` is intentionally unauthenticated. It synthesizes owner
+access for every request. Do not expose this mode outside a trusted development
+machine.

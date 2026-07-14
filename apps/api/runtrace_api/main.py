@@ -19,7 +19,7 @@ from sqlalchemy import and_, delete, desc, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from .config import ROOT, settings
-from .auth import authenticate_request, router as auth_router
+from .auth import apply_owner_recovery_password, authenticate_request, router as auth_router
 from .database import SessionLocal, get_db
 from .embeddings import index_document, semantic_matches
 from .models import (
@@ -109,6 +109,9 @@ def startup() -> None:
         migration_config = Config(str(ROOT / "alembic.ini"))
         migration_config.set_main_option("sqlalchemy.url", settings.database_url)
         command.upgrade(migration_config, "head")
+    if settings.owner_recovery_password:
+        with SessionLocal() as session:
+            apply_owner_recovery_password(session)
     if settings.seed_demo:
         with SessionLocal() as session:
             seed_demo(session)

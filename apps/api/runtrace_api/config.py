@@ -22,23 +22,13 @@ class Settings(BaseSettings):
     embedding_cache_path: Path = ROOT / "data" / "models"
     claim_timeout_seconds: int = 300
     dev: bool = False
-    webauthn_rp_id: str = "localhost"
-    webauthn_rp_name: str = "RunTrace"
-    webauthn_origins: str = "https://localhost:3000"
+    secure_session_cookie: bool = False
+    owner_recovery_password: str = ""
     session_ttl_hours: int = 168
     setup_link_ttl_hours: int = 24
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
-
-    @property
-    def webauthn_origin_list(self) -> list[str]:
-        return [origin.strip().rstrip("/") for origin in self.webauthn_origins.split(",") if origin.strip()]
-
-    @property
-    def secure_session_cookie(self) -> bool:
-        return all(origin.startswith("https://") for origin in self.webauthn_origin_list)
-
 
 settings = Settings()

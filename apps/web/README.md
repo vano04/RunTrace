@@ -8,20 +8,15 @@ Start the API from the repository root, then run:
 
 ```bash
 npm ci
-npm run dev:https
+npm run dev
 ```
 
-Open <https://localhost:3000>. Next.js uses `mkcert` to generate and trust a
-local certificate; the first run may ask for permission to install its local
-certificate authority. The default API target is <http://localhost:8000> and
-is proxied through the HTTPS web origin; override it when necessary:
+Open <http://localhost:3000>. The default API target is
+<http://localhost:8000>; override it when necessary:
 
 ```bash
-INTERNAL_API_URL=http://127.0.0.1:8000 npm run dev:https
+INTERNAL_API_URL=http://127.0.0.1:8000 npm run dev
 ```
-
-Use `npm run dev` when passkeys and other secure-context browser APIs are not
-needed.
 
 ## Checks
 

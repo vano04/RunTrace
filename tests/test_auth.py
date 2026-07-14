@@ -1,6 +1,9 @@
 import hashlib
 from datetime import timedelta
 
+from sqlalchemy import select
+
+from runtrace_api.auth import apply_owner_recovery_password
 from runtrace_api.config import settings
 from runtrace_api.database import SessionLocal
 from runtrace_api.models import ApiToken, AuthSession, Identity, now_utc
@@ -28,6 +31,62 @@ def test_normal_mode_requires_bootstrap_then_a_session(fresh_database, monkeypat
     assert fresh_database.get("/api/v1/projects").status_code == 401
 
 
+def test_owner_bootstrap_and_password_login(fresh_database, monkeypatch):
+    monkeypatch.setattr(settings, "dev", False)
+    created = fresh_database.post("/api/v1/auth/bootstrap", json={
+        "name": "Owner",
+        "password": "correct horse battery staple",
+    })
+    assert created.status_code == 201
+    assert created.json()["identity"]["password_set"] is True
+    assert fresh_database.get("/api/v1/projects").status_code == 200
+
+    with SessionLocal() as session:
+        owner = session.scalar(select(Identity).where(Identity.name == "Owner"))
+        assert owner is not None
+        assert owner.password_hash != "correct horse battery staple"
+
+    assert fresh_database.post("/api/v1/auth/logout").status_code == 204
+    assert fresh_database.post("/api/v1/auth/login", json={"name": "Owner", "password": "wrong password"}).status_code == 401
+    signed_in = fresh_database.post("/api/v1/auth/login", json={
+        "name": "owner",
+        "password": "correct horse battery staple",
+    })
+    assert signed_in.status_code == 200
+    assert fresh_database.get("/api/v1/projects").status_code == 200
+
+    changed = fresh_database.post("/api/v1/auth/password", json={
+        "current_password": "correct horse battery staple",
+        "new_password": "an even better replacement password",
+    })
+    assert changed.status_code == 200
+    assert fresh_database.post("/api/v1/auth/logout").status_code == 204
+    assert fresh_database.post("/api/v1/auth/login", json={
+        "name": "Owner",
+        "password": "correct horse battery staple",
+    }).status_code == 401
+    assert fresh_database.post("/api/v1/auth/login", json={
+        "name": "Owner",
+        "password": "an even better replacement password",
+    }).status_code == 200
+
+
+def test_owner_recovery_password_initializes_legacy_owner(fresh_database, monkeypatch):
+    monkeypatch.setattr(settings, "dev", False)
+    monkeypatch.setattr(settings, "owner_recovery_password", "temporary recovery password")
+    with SessionLocal() as session:
+        owner = Identity(name="Owner", role="owner", status="active")
+        session.add(owner)
+        session.commit()
+        apply_owner_recovery_password(session)
+        assert owner.password_hash
+
+    assert fresh_database.post("/api/v1/auth/login", json={
+        "name": "Owner",
+        "password": "temporary recovery password",
+    }).status_code == 200
+
+
 def test_admin_can_create_identity_and_suspend_access(fresh_database, monkeypatch):
     monkeypatch.setattr(settings, "dev", False)
     raw_token = "test-session-token"
@@ -41,6 +100,7 @@ def test_admin_can_create_identity_and_suspend_access(fresh_database, monkeypatc
             expires_at=now_utc() + timedelta(hours=1),
         ))
         session.commit()
+    fresh_database.cookies.clear()
     fresh_database.cookies.set("runtrace_session", raw_token)
 
     created = fresh_database.post("/api/v1/auth/identities", json={
@@ -58,9 +118,11 @@ def test_admin_can_create_identity_and_suspend_access(fresh_database, monkeypatc
     replacement = fresh_database.post(f"/api/v1/auth/identities/{identity_id}/setup-link")
     assert replacement.status_code == 200
     assert replacement.json()["setup_token"] != payload["setup_token"]
-    assert fresh_database.post("/api/v1/auth/setup/options", json={"token": payload["setup_token"]}).status_code == 400
-    assert fresh_database.post("/api/v1/auth/setup/options", json={"token": replacement.json()["setup_token"]}).status_code == 200
+    assert fresh_database.post("/api/v1/auth/setup", json={"token": payload["setup_token"], "password": "a secure old password"}).status_code == 400
+    assert fresh_database.post("/api/v1/auth/setup", json={"token": replacement.json()["setup_token"], "password": "a secure new password"}).status_code == 200
 
+    fresh_database.cookies.clear()
+    fresh_database.cookies.set("runtrace_session", raw_token)
     suspended = fresh_database.patch(f"/api/v1/auth/identities/{identity_id}", json={"status": "suspended"})
     assert suspended.status_code == 200
     assert suspended.json()["status"] == "suspended"

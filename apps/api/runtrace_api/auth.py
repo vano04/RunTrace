@@ -3,8 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import time
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from threading import Lock
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -12,29 +15,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
-from webauthn import (
-    generate_authentication_options,
-    generate_registration_options,
-    verify_authentication_response,
-    verify_registration_response,
-)
-from webauthn.helpers import base64url_to_bytes, options_to_json
-from webauthn.helpers.exceptions import InvalidAuthenticationResponse, InvalidRegistrationResponse
-from webauthn.helpers.structs import (
-    AuthenticatorSelectionCriteria,
-    PublicKeyCredentialDescriptor,
-    ResidentKeyRequirement,
-    AuthenticatorTransport,
-    UserVerificationRequirement,
-)
 
 from .config import settings
 from .database import SessionLocal, get_db
-from .models import ApiToken, AuthCeremony, AuthSession, Identity, PasskeyCredential, now_utc
+from .models import ApiToken, AuthSession, Identity, now_utc
 
 
 SESSION_COOKIE = "runtrace_session"
-CEREMONY_TTL = timedelta(minutes=5)
+LOGIN_ATTEMPT_LIMIT = 10
+LOGIN_ATTEMPT_WINDOW_SECONDS = 300
+_login_attempts: dict[str, list[float]] = {}
+_login_attempts_lock = Lock()
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
 
 
@@ -47,23 +38,24 @@ class AuthPrincipal:
     dev: bool = False
 
 
-class BootstrapOptionsRequest(BaseModel):
+class BootstrapRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=12, max_length=1024)
 
 
-class SetupOptionsRequest(BaseModel):
+class SetupRequest(BaseModel):
     token: str = Field(min_length=32, max_length=256)
+    password: str = Field(min_length=12, max_length=1024)
 
 
-class RegistrationVerifyRequest(BaseModel):
-    ceremony_id: str
-    credential: dict[str, Any]
-    passkey_name: str = Field(default="Passkey", min_length=1, max_length=120)
+class LoginRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=1, max_length=1024)
 
 
-class AuthenticationVerifyRequest(BaseModel):
-    ceremony_id: str
-    credential: dict[str, Any]
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=12, max_length=1024)
 
 
 class IdentityCreateRequest(BaseModel):
@@ -76,10 +68,6 @@ class IdentityUpdateRequest(BaseModel):
     status: Literal["active", "suspended"] | None = None
 
 
-class PasskeyNameRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-
-
 class ApiTokenCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     expires_in_days: int | None = Field(default=None, ge=1, le=365)
@@ -89,33 +77,83 @@ def _hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def _password_hash(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(password.encode(), salt=salt, n=16384, r=8, p=1, dklen=32)
+    encode = lambda value: urlsafe_b64encode(value).decode().rstrip("=")
+    return f"scrypt$16384$8$1${encode(salt)}${encode(digest)}"
+
+
+def _password_matches(password: str, encoded: str) -> bool:
+    try:
+        algorithm, n, r, p, salt_value, digest_value = encoded.split("$")
+        if algorithm != "scrypt":
+            return False
+        decode = lambda value: urlsafe_b64decode(value + "=" * (-len(value) % 4))
+        expected = decode(digest_value)
+        actual = hashlib.scrypt(
+            password.encode(), salt=decode(salt_value), n=int(n), r=int(r), p=int(p), dklen=len(expected)
+        )
+        return secrets.compare_digest(actual, expected)
+    except (TypeError, ValueError):
+        return False
+
+
+_DUMMY_PASSWORD_HASH = _password_hash(secrets.token_urlsafe(24))
+
+
+def _login_key(request: Request, name: str) -> str:
+    host = request.client.host if request.client else "unknown"
+    return f"{host}:{name.strip().lower()}"
+
+
+def _check_login_limit(key: str) -> None:
+    cutoff = time.monotonic() - LOGIN_ATTEMPT_WINDOW_SECONDS
+    with _login_attempts_lock:
+        recent = [attempt for attempt in _login_attempts.get(key, []) if attempt > cutoff]
+        _login_attempts[key] = recent
+        if len(recent) >= LOGIN_ATTEMPT_LIMIT:
+            raise HTTPException(429, "Too many sign-in attempts. Try again in a few minutes.")
+
+
+def _record_login_failure(key: str) -> None:
+    with _login_attempts_lock:
+        _login_attempts.setdefault(key, []).append(time.monotonic())
+
+
+def _clear_login_failures(key: str) -> None:
+    with _login_attempts_lock:
+        _login_attempts.pop(key, None)
+
+
+def apply_owner_recovery_password(session: Session) -> None:
+    password = settings.owner_recovery_password
+    if not password:
+        return
+    if len(password) < 12:
+        raise RuntimeError("RUNTRACE_OWNER_RECOVERY_PASSWORD must contain at least 12 characters")
+    owner = session.scalar(select(Identity).where(Identity.role == "owner"))
+    if owner and (not owner.password_hash or not _password_matches(password, owner.password_hash)):
+        owner.password_hash = _password_hash(password)
+        owner.status = "active"
+        session.execute(delete(AuthSession).where(AuthSession.identity_id == owner.id))
+        session.commit()
+
+
 def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def _identity_payload(identity: Identity, include_passkeys: bool = True) -> dict[str, Any]:
-    payload: dict[str, Any] = {
+def _identity_payload(identity: Identity) -> dict[str, Any]:
+    return {
         "id": identity.id,
         "name": identity.name,
         "role": identity.role,
         "status": identity.status,
         "last_active_at": identity.last_active_at,
         "created_at": identity.created_at,
+        "password_set": bool(identity.password_hash),
     }
-    if include_passkeys:
-        payload["passkeys"] = [
-            {
-                "id": item.id,
-                "name": item.name,
-                "device_type": item.device_type,
-                "backed_up": item.backed_up,
-                "transports": item.transports,
-                "last_used_at": item.last_used_at,
-                "created_at": item.created_at,
-            }
-            for item in sorted(identity.passkeys, key=lambda value: value.created_at)
-        ]
-    return payload
 
 
 def _api_token_payload(token: ApiToken) -> dict[str, Any]:
@@ -132,7 +170,7 @@ def _api_token_payload(token: ApiToken) -> dict[str, Any]:
 def _principal(request: Request) -> AuthPrincipal:
     principal = getattr(request.state, "identity", None)
     if not principal:
-        raise HTTPException(401, "Sign in with a passkey or provide a valid bearer token")
+        raise HTTPException(401, "Sign in with a password or provide a valid bearer token")
     return principal
 
 
@@ -144,40 +182,7 @@ def _admin(principal: AuthPrincipal = Depends(_principal)) -> AuthPrincipal:
 
 def _delete_expired(session: Session) -> None:
     now = now_utc()
-    session.execute(delete(AuthCeremony).where(AuthCeremony.expires_at < now))
     session.execute(delete(AuthSession).where(AuthSession.expires_at < now))
-
-
-def _new_ceremony(
-    session: Session,
-    ceremony: str,
-    challenge: bytes,
-    identity_id: str | None = None,
-    payload: dict[str, Any] | None = None,
-) -> AuthCeremony:
-    item = AuthCeremony(
-        ceremony=ceremony,
-        challenge=challenge,
-        identity_id=identity_id,
-        payload=payload or {},
-        expires_at=now_utc() + CEREMONY_TTL,
-    )
-    session.add(item)
-    session.commit()
-    session.refresh(item)
-    return item
-
-
-def _consume_ceremony(session: Session, ceremony_id: str, expected: str) -> AuthCeremony:
-    item = session.get(AuthCeremony, ceremony_id)
-    if not item or item.ceremony != expected or _aware(item.expires_at) <= now_utc():
-        if item:
-            session.delete(item)
-            session.commit()
-        raise HTTPException(400, "This passkey request expired. Please try again.")
-    session.delete(item)
-    session.flush()
-    return item
 
 
 def _set_session(response: Response, session: Session, identity: Identity) -> None:
@@ -196,29 +201,6 @@ def _set_session(response: Response, session: Session, identity: Identity) -> No
         samesite="lax",
         path="/",
     )
-
-
-def _registration_options(session: Session, identity: Identity, ceremony_name: str) -> dict[str, Any]:
-    challenge = secrets.token_bytes(32)
-    exclude = [PublicKeyCredentialDescriptor(
-        id=item.credential_id,
-        transports=[AuthenticatorTransport(value) for value in item.transports if value in AuthenticatorTransport._value2member_map_],
-    ) for item in identity.passkeys]
-    options = generate_registration_options(
-        rp_id=settings.webauthn_rp_id,
-        rp_name=settings.webauthn_rp_name,
-        user_id=identity.id.encode(),
-        user_name=identity.id,
-        user_display_name=identity.name,
-        challenge=challenge,
-        exclude_credentials=exclude,
-        authenticator_selection=AuthenticatorSelectionCriteria(
-            resident_key=ResidentKeyRequirement.REQUIRED,
-            user_verification=UserVerificationRequirement.REQUIRED,
-        ),
-    )
-    ceremony = _new_ceremony(session, ceremony_name, challenge, identity.id)
-    return {"ceremony_id": ceremony.id, "options": json.loads(options_to_json(options))}
 
 
 async def authenticate_request(request: Request, call_next):
@@ -270,7 +252,7 @@ async def authenticate_request(request: Request, call_next):
     if path == "/health" or path.startswith("/api/v1/auth/"):
         return await call_next(request)
     if path.startswith("/api/") and not request.state.identity:
-        detail = "This RunTrace instance needs an owner" if not configured else "Sign in with a passkey or provide a valid bearer token"
+        detail = "This RunTrace instance needs an owner" if not configured else "Sign in with a password or provide a valid bearer token"
         return Response(content=json.dumps({"detail": detail}), status_code=428 if not configured else 401, media_type="application/json")
     return await call_next(request)
 
@@ -279,6 +261,7 @@ async def authenticate_request(request: Request, call_next):
 def auth_status(request: Request, session: Session = Depends(get_db)) -> dict[str, Any]:
     principal = getattr(request.state, "identity", None)
     configured = bool(session.scalar(select(func.count()).select_from(Identity)))
+    identity = session.get(Identity, principal.id) if principal and not principal.dev else None
     return {
         "dev": settings.dev,
         "configured": configured,
@@ -288,205 +271,80 @@ def auth_status(request: Request, session: Session = Depends(get_db)) -> dict[st
             "name": principal.name,
             "role": principal.role,
             "status": principal.status,
+            "password_set": True if principal.dev else bool(identity and identity.password_hash),
         },
     }
 
 
-@router.post("/bootstrap/options")
-def bootstrap_options(body: BootstrapOptionsRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
+@router.post("/bootstrap", status_code=201)
+def bootstrap(body: BootstrapRequest, response: Response, session: Session = Depends(get_db)) -> dict[str, Any]:
     if settings.dev:
         raise HTTPException(409, "Authentication is disabled in development mode")
     if session.scalar(select(func.count()).select_from(Identity)):
         raise HTTPException(409, "This instance already has an owner")
     name = body.name.strip()
-    identity = Identity(id=f"identity_{secrets.token_hex(16)}", name=name, role="owner", status="pending")
-    challenge = secrets.token_bytes(32)
-    options = generate_registration_options(
-        rp_id=settings.webauthn_rp_id,
-        rp_name=settings.webauthn_rp_name,
-        user_id=identity.id.encode(),
-        user_name=identity.id,
-        user_display_name=identity.name,
-        challenge=challenge,
-        authenticator_selection=AuthenticatorSelectionCriteria(
-            resident_key=ResidentKeyRequirement.REQUIRED,
-            user_verification=UserVerificationRequirement.REQUIRED,
-        ),
-    )
-    ceremony = _new_ceremony(session, "bootstrap", challenge, payload={
-        "identity_id": identity.id,
-        "name": identity.name,
-    })
-    return {"ceremony_id": ceremony.id, "options": json.loads(options_to_json(options))}
-
-
-@router.post("/setup/options")
-def setup_options(body: SetupOptionsRequest, session: Session = Depends(get_db)) -> dict[str, Any]:
-    token_hash = _hash(body.token)
-    identity = session.scalar(
-        select(Identity)
-        .options(selectinload(Identity.passkeys))
-        .where(Identity.setup_token_hash == token_hash)
-    )
-    if not identity or not identity.setup_expires_at or _aware(identity.setup_expires_at) <= now_utc() or identity.status == "suspended":
-        raise HTTPException(400, "This setup link is invalid or expired")
-    result = _registration_options(session, identity, "setup")
-    ceremony = session.get(AuthCeremony, result["ceremony_id"])
-    if ceremony:
-        ceremony.payload = {"setup_token_hash": token_hash}
-        session.commit()
-    return result
-
-
-@router.post("/passkeys/options")
-def add_passkey_options(
-    request: Request,
-    session: Session = Depends(get_db),
-    _: AuthPrincipal = Depends(_principal),
-) -> dict[str, Any]:
-    identity = session.scalar(select(Identity).options(selectinload(Identity.passkeys)).where(Identity.id == request.state.identity.id))
-    if not identity:
-        raise HTTPException(404, "Identity not found")
-    return _registration_options(session, identity, "add_passkey")
-
-
-@router.post("/registration/verify")
-def registration_verify(body: RegistrationVerifyRequest, response: Response, session: Session = Depends(get_db)) -> dict[str, Any]:
-    ceremony = _consume_ceremony(session, body.ceremony_id, "bootstrap")
-    if session.scalar(select(func.count()).select_from(Identity)):
-        session.rollback()
-        raise HTTPException(409, "This instance already has an owner")
     identity = Identity(
-        id=ceremony.payload["identity_id"],
-        name=ceremony.payload["name"],
+        id=f"identity_{secrets.token_hex(16)}",
+        name=name,
         role="owner",
         status="active",
+        password_hash=_password_hash(body.password),
     )
+    session.add(identity)
     try:
-        return _verify_and_save_registration(body, response, session, ceremony, identity, create_identity=True)
+        session.flush()
+        _set_session(response, session, identity)
     except IntegrityError as exc:
         session.rollback()
         raise HTTPException(409, "This instance already has an owner") from exc
+    return {"identity": _identity_payload(identity)}
 
 
-@router.post("/setup/verify")
-def setup_verify(body: RegistrationVerifyRequest, response: Response, session: Session = Depends(get_db)) -> dict[str, Any]:
-    ceremony = _consume_ceremony(session, body.ceremony_id, "setup")
-    identity = session.get(Identity, ceremony.identity_id)
-    if not identity or identity.status == "suspended" or identity.setup_token_hash != ceremony.payload.get("setup_token_hash"):
-        session.rollback()
-        raise HTTPException(400, "Identity is no longer available")
+@router.post("/setup")
+def setup(body: SetupRequest, response: Response, session: Session = Depends(get_db)) -> dict[str, Any]:
+    token_hash = _hash(body.token)
+    identity = session.scalar(select(Identity).where(Identity.setup_token_hash == token_hash))
+    if not identity or not identity.setup_expires_at or _aware(identity.setup_expires_at) <= now_utc() or identity.status == "suspended":
+        raise HTTPException(400, "This setup link is invalid or expired")
     identity.status = "active"
+    identity.password_hash = _password_hash(body.password)
     identity.setup_token_hash = None
     identity.setup_expires_at = None
-    return _verify_and_save_registration(body, response, session, ceremony, identity)
+    _set_session(response, session, identity)
+    return {"identity": _identity_payload(identity)}
 
 
-@router.post("/passkeys/verify")
-def add_passkey_verify(
-    body: RegistrationVerifyRequest,
+@router.post("/login")
+def login(body: LoginRequest, request: Request, response: Response, session: Session = Depends(get_db)) -> dict[str, Any]:
+    login_key = _login_key(request, body.name)
+    _check_login_limit(login_key)
+    identity = session.scalar(select(Identity).where(func.lower(Identity.name) == body.name.strip().lower()))
+    encoded = identity.password_hash if identity and identity.password_hash else _DUMMY_PASSWORD_HASH
+    valid = _password_matches(body.password, encoded)
+    if not identity or not valid or identity.status != "active":
+        _record_login_failure(login_key)
+        raise HTTPException(401, "Invalid name or password")
+    _clear_login_failures(login_key)
+    _set_session(response, session, identity)
+    return {"identity": _identity_payload(identity)}
+
+
+@router.post("/password")
+def change_password(
+    body: PasswordChangeRequest,
     response: Response,
     request: Request,
     session: Session = Depends(get_db),
     _: AuthPrincipal = Depends(_principal),
 ) -> dict[str, Any]:
-    ceremony = _consume_ceremony(session, body.ceremony_id, "add_passkey")
-    if ceremony.identity_id != request.state.identity.id:
-        session.rollback()
-        raise HTTPException(403, "Passkey request belongs to another identity")
-    identity = session.get(Identity, ceremony.identity_id)
-    if not identity:
-        raise HTTPException(404, "Identity not found")
-    return _verify_and_save_registration(body, response, session, ceremony, identity)
-
-
-def _verify_and_save_registration(
-    body: RegistrationVerifyRequest,
-    response: Response,
-    session: Session,
-    ceremony: AuthCeremony,
-    identity: Identity,
-    create_identity: bool = False,
-) -> dict[str, Any]:
-    try:
-        verified = verify_registration_response(
-            credential=body.credential,
-            expected_challenge=ceremony.challenge,
-            expected_rp_id=settings.webauthn_rp_id,
-            expected_origin=settings.webauthn_origin_list,
-            require_user_verification=True,
-        )
-    except InvalidRegistrationResponse as exc:
-        session.rollback()
-        raise HTTPException(400, f"Passkey verification failed: {exc}") from exc
-    if session.scalar(select(PasskeyCredential.id).where(PasskeyCredential.credential_id == verified.credential_id)):
-        session.rollback()
-        raise HTTPException(409, "This passkey is already registered")
-    if create_identity:
-        session.add(identity)
-        session.flush()
-    transports = body.credential.get("response", {}).get("transports", [])
-    session.add(PasskeyCredential(
-        identity_id=identity.id,
-        credential_id=verified.credential_id,
-        public_key=verified.credential_public_key,
-        sign_count=verified.sign_count,
-        device_type=verified.credential_device_type.value,
-        backed_up=verified.credential_backed_up,
-        transports=transports,
-        name=body.passkey_name.strip(),
-    ))
+    identity = session.get(Identity, request.state.identity.id)
+    if not identity or (identity.password_hash and not _password_matches(body.current_password, identity.password_hash)):
+        raise HTTPException(401, "Current password is incorrect")
+    identity.password_hash = _password_hash(body.new_password)
+    session.execute(delete(AuthSession).where(AuthSession.identity_id == identity.id))
+    session.flush()
     _set_session(response, session, identity)
-    return {"identity": _identity_payload(identity, include_passkeys=False)}
-
-
-@router.post("/login/options")
-def login_options(session: Session = Depends(get_db)) -> dict[str, Any]:
-    if not session.scalar(select(func.count()).select_from(Identity).where(Identity.status == "active")):
-        raise HTTPException(409, "No active identities are configured")
-    challenge = secrets.token_bytes(32)
-    options = generate_authentication_options(
-        rp_id=settings.webauthn_rp_id,
-        challenge=challenge,
-        user_verification=UserVerificationRequirement.REQUIRED,
-    )
-    ceremony = _new_ceremony(session, "authentication", challenge)
-    return {"ceremony_id": ceremony.id, "options": json.loads(options_to_json(options))}
-
-
-@router.post("/login/verify")
-def login_verify(body: AuthenticationVerifyRequest, response: Response, session: Session = Depends(get_db)) -> dict[str, Any]:
-    ceremony = _consume_ceremony(session, body.ceremony_id, "authentication")
-    try:
-        credential_id = base64url_to_bytes(body.credential["id"])
-    except (KeyError, TypeError, ValueError) as exc:
-        session.rollback()
-        raise HTTPException(400, "Invalid passkey response") from exc
-    passkey = session.scalar(
-        select(PasskeyCredential)
-        .options(selectinload(PasskeyCredential.identity))
-        .where(PasskeyCredential.credential_id == credential_id)
-    )
-    if not passkey or passkey.identity.status != "active":
-        session.rollback()
-        raise HTTPException(401, "Passkey is not registered to an active identity")
-    try:
-        verified = verify_authentication_response(
-            credential=body.credential,
-            expected_challenge=ceremony.challenge,
-            expected_rp_id=settings.webauthn_rp_id,
-            expected_origin=settings.webauthn_origin_list,
-            credential_public_key=passkey.public_key,
-            credential_current_sign_count=passkey.sign_count,
-            require_user_verification=True,
-        )
-    except InvalidAuthenticationResponse as exc:
-        session.rollback()
-        raise HTTPException(401, f"Passkey verification failed: {exc}") from exc
-    passkey.sign_count = verified.new_sign_count
-    passkey.last_used_at = now_utc()
-    _set_session(response, session, passkey.identity)
-    return {"identity": _identity_payload(passkey.identity, include_passkeys=False)}
+    return {"identity": _identity_payload(identity)}
 
 
 @router.post("/logout", status_code=204)
@@ -552,7 +410,7 @@ def revoke_api_token(
 
 @router.get("/identities")
 def list_identities(session: Session = Depends(get_db), _: AuthPrincipal = Depends(_admin)) -> list[dict[str, Any]]:
-    identities = session.scalars(select(Identity).options(selectinload(Identity.passkeys)).order_by(Identity.created_at)).all()
+    identities = session.scalars(select(Identity).order_by(Identity.created_at)).all()
     return [_identity_payload(identity) for identity in identities]
 
 
@@ -604,7 +462,7 @@ def update_identity(
     session: Session = Depends(get_db),
     principal: AuthPrincipal = Depends(_admin),
 ) -> dict[str, Any]:
-    identity = session.scalar(select(Identity).options(selectinload(Identity.passkeys)).where(Identity.id == identity_id))
+    identity = session.get(Identity, identity_id)
     if not identity:
         raise HTTPException(404, "Identity not found")
     if identity.role == "owner":
@@ -621,42 +479,3 @@ def update_identity(
     session.commit()
     session.refresh(identity)
     return _identity_payload(identity)
-
-
-@router.delete("/identities/{identity_id}/passkeys/{passkey_id}", status_code=204)
-def revoke_passkey(
-    identity_id: str,
-    passkey_id: str,
-    session: Session = Depends(get_db),
-    _: AuthPrincipal = Depends(_admin),
-) -> None:
-    identity = session.scalar(select(Identity).options(selectinload(Identity.passkeys)).where(Identity.id == identity_id))
-    if not identity:
-        raise HTTPException(404, "Identity not found")
-    passkey = next((item for item in identity.passkeys if item.id == passkey_id), None)
-    if not passkey:
-        raise HTTPException(404, "Passkey not found")
-    if identity.role == "owner" and len(identity.passkeys) == 1:
-        raise HTTPException(409, "The owner's only passkey cannot be revoked")
-    session.delete(passkey)
-    session.execute(delete(AuthSession).where(AuthSession.identity_id == identity.id))
-    session.commit()
-
-
-@router.patch("/passkeys/{passkey_id}")
-def rename_passkey(
-    passkey_id: str,
-    body: PasskeyNameRequest,
-    request: Request,
-    session: Session = Depends(get_db),
-    _: AuthPrincipal = Depends(_principal),
-) -> dict[str, Any]:
-    passkey = session.scalar(select(PasskeyCredential).where(
-        PasskeyCredential.id == passkey_id,
-        PasskeyCredential.identity_id == request.state.identity.id,
-    ))
-    if not passkey:
-        raise HTTPException(404, "Passkey not found")
-    passkey.name = body.name.strip()
-    session.commit()
-    return {"id": passkey.id, "name": passkey.name}

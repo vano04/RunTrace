@@ -4,7 +4,7 @@ The included Compose stack is the supported single-host deployment baseline. It 
 
 ## Deployment modes
 
-Normal mode is empty, persistent, and protected by browser passkeys:
+Normal mode is empty, persistent, and protected by browser passwords:
 
 ```bash
 docker compose up -d --build
@@ -31,8 +31,8 @@ Development mode is for a trusted workstation only. It is not a production authe
 Before exposing RunTrace on a network:
 
 1. Put the web service behind a TLS-terminating reverse proxy and use a stable hostname.
-2. Set `RUNTRACE_WEBAUTHN_RP_ID` to that hostname and `RUNTRACE_WEBAUTHN_ORIGINS` to its exact `https://` origin before enrolling the owner.
-3. Set `RUNTRACE_CORS_ORIGINS` to the same public origin.
+2. Set `RUNTRACE_CORS_ORIGINS` to the exact public origin.
+3. Set `RUNTRACE_SECURE_SESSION_COOKIE=true` when HTTPS is enabled.
 4. Replace the example PostgreSQL credentials in `docker-compose.yml` or supply an environment-specific Compose override and secret management.
 5. Keep PostgreSQL and the API private to the host or internal network where possible. The checked-in Compose file publishes the API on port 8000 for local development and diagnostics.
 6. Keep `RUNTRACE_DEV=false` and `RUNTRACE_SEED_DEMO=false`.
@@ -47,16 +47,14 @@ Compose accepts these deployment values from the shell or a local `.env` file:
 ```env
 RUNTRACE_DEV=false
 RUNTRACE_CORS_ORIGINS=https://runtrace.example.com
-RUNTRACE_WEBAUTHN_RP_ID=runtrace.example.com
-RUNTRACE_WEBAUTHN_RP_NAME=RunTrace
-RUNTRACE_WEBAUTHN_ORIGINS=https://runtrace.example.com
+RUNTRACE_SECURE_SESSION_COOKIE=true
 RUNTRACE_SESSION_TTL_HOURS=168
 RUNTRACE_SETUP_LINK_TTL_HOURS=24
 RUNTRACE_CLAIM_TIMEOUT_SECONDS=300
 RUNTRACE_MAX_ARTIFACT_SIZE=10485760
 ```
 
-Do not commit a populated `.env` file. Passkeys are bound to the RP ID and public origin, so changing either after enrollment makes existing credentials unusable.
+Do not commit a populated `.env` file. Use unique passwords stored in a password manager.
 
 ## Persistence and backups
 

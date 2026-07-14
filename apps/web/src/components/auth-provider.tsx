@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react"
-import { Check, Fingerprint, KeyRound, LoaderCircle, LockKeyhole, ShieldCheck, Users } from "lucide-react"
+import { Check, KeyRound, LoaderCircle, LockKeyhole, ShieldCheck, Users } from "lucide-react"
 import { toast } from "sonner"
 
 import { RunTraceLogo } from "@/components/runtrace-logo"
@@ -26,12 +26,13 @@ export function useAuth() {
 }
 
 function readableError(error: unknown) {
-  if (error instanceof DOMException && error.name === "NotAllowedError") return "Passkey request was cancelled or timed out."
   return error instanceof Error ? error.message : "Something went wrong"
 }
 
 function SetupScreen({ status, onComplete }: { status: AuthStatus; onComplete: () => Promise<void> }) {
   const [name, setName] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmation, setConfirmation] = useState("")
   const [busy, setBusy] = useState(false)
   const setupToken = useSyncExternalStore(
     () => () => undefined,
@@ -39,10 +40,19 @@ function SetupScreen({ status, onComplete }: { status: AuthStatus; onComplete: (
     () => null,
   )
 
-  const act = async (action: () => Promise<unknown>) => {
+  const isInvite = Boolean(setupToken)
+  const isBootstrap = !status.configured && !isInvite
+
+  const submit = async () => {
+    if ((isInvite || isBootstrap) && password !== confirmation) {
+      toast.error("Passwords do not match")
+      return
+    }
     setBusy(true)
     try {
-      await action()
+      if (isBootstrap) await auth.bootstrap(name, password)
+      else if (isInvite && setupToken) await auth.setup(setupToken, password)
+      else await auth.login(name, password)
       window.history.replaceState({}, "", window.location.pathname)
       await onComplete()
     } catch (error) {
@@ -51,9 +61,6 @@ function SetupScreen({ status, onComplete }: { status: AuthStatus; onComplete: (
       setBusy(false)
     }
   }
-
-  const isInvite = Boolean(setupToken)
-  const isBootstrap = !status.configured && !isInvite
 
   return (
     <main className="min-h-screen bg-background">
@@ -65,53 +72,30 @@ function SetupScreen({ status, onComplete }: { status: AuthStatus; onComplete: (
               {isInvite ? "Finish setting up your identity" : isBootstrap ? "Let’s set up your RunTrace instance" : "Welcome back"}
             </h1>
             <p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground">
-              {isInvite ? "Save a passkey to activate the access an admin granted you." : isBootstrap ? "Create the first owner account and secure this instance with passkey authentication." : "Use the passkey saved for your RunTrace identity."}
+              {isInvite ? "Choose a password to activate the access an admin granted you." : isBootstrap ? "Create the first owner account and choose a strong password." : "Sign in with your RunTrace identity."}
             </p>
             <ol className="mt-10 space-y-7">
               {[
                 [Users, isInvite ? "Identity created" : "Create owner identity", isInvite ? "An admin has granted your access." : "You’ll own and administer this instance."],
-                [Fingerprint, "Save a passkey", "Sign in with your fingerprint, face, screen lock, or security key."],
-                [ShieldCheck, "Ready for your team", "Manage access without sharing passwords."],
+                [KeyRound, "Choose a password", "Use at least 12 characters and keep it in a password manager."],
+                [ShieldCheck, "Ready for your team", "Each person receives a separate identity and password."],
               ].map(([Icon, title, description], index) => {
                 const StepIcon = Icon as typeof Users
-                return (
-                  <li className="flex gap-4" key={title as string}>
-                    <div className="grid size-9 shrink-0 place-items-center rounded-full border bg-background text-primary">
-                      {index === 0 && (isInvite || status.configured) ? <Check className="size-4" /> : <StepIcon className="size-4" />}
-                    </div>
-                    <div><p className="font-medium">{title as string}</p><p className="mt-1 text-sm leading-5 text-muted-foreground">{description as string}</p></div>
-                  </li>
-                )
+                return <li className="flex gap-4" key={title as string}><div className="grid size-9 shrink-0 place-items-center rounded-full border bg-background text-primary">{index === 0 && (isInvite || status.configured) ? <Check className="size-4" /> : <StepIcon className="size-4" />}</div><div><p className="font-medium">{title as string}</p><p className="mt-1 text-sm leading-5 text-muted-foreground">{description as string}</p></div></li>
               })}
             </ol>
           </section>
 
           <section className="p-7 lg:p-10">
-            <h2 className="text-xl font-semibold tracking-tight">
-              {isInvite ? "Save your passkey" : isBootstrap ? "Secure this instance" : "Sign in to RunTrace"}
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {isInvite ? "This setup link can only be used once." : isBootstrap ? "Create the owner identity and save its first passkey." : "No password is required."}
-            </p>
-
-            {isBootstrap ? (
-              <form className="mt-7 space-y-5" onSubmit={(event) => { event.preventDefault(); void act(() => auth.bootstrap(name)) }}>
-                <div className="space-y-2"><Label htmlFor="owner-name">Full name</Label><Input id="owner-name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Your full name" required /></div>
-                <PasskeyNote />
-                <Button size="lg" className="w-full" disabled={busy}><BusyIcon busy={busy} /><span>{busy ? "Waiting for your device…" : "Create owner & save passkey"}</span></Button>
-              </form>
-            ) : isInvite ? (
-              <div className="mt-7 space-y-5">
-                <PasskeyNote />
-                <Button size="lg" className="w-full" disabled={busy || !setupToken} onClick={() => setupToken && void act(() => auth.setup(setupToken))}><BusyIcon busy={busy} /><span>{busy ? "Waiting for your device…" : "Save passkey & continue"}</span></Button>
-              </div>
-            ) : (
-              <div className="mt-7 space-y-5">
-                <PasskeyNote />
-                <Button size="lg" className="w-full" disabled={busy} onClick={() => void act(() => auth.login())}><BusyIcon busy={busy} /><span>{busy ? "Waiting for your device…" : "Sign in with a passkey"}</span></Button>
-              </div>
-            )}
-            <div className="mt-5 flex items-start justify-center gap-2 text-xs leading-5 text-muted-foreground"><LockKeyhole className="mt-0.5 size-3.5 shrink-0" /><span>Your private key stays on your device. RunTrace stores only the public credential needed to verify you.</span></div>
+            <h2 className="text-xl font-semibold tracking-tight">{isInvite ? "Set your password" : isBootstrap ? "Secure this instance" : "Sign in to RunTrace"}</h2>
+            <p className="mt-2 text-sm text-muted-foreground">{isInvite ? "This setup link can only be used once." : isBootstrap ? "Create the owner identity and its password." : "Enter your identity name and password."}</p>
+            <form className="mt-7 space-y-5" onSubmit={(event) => { event.preventDefault(); void submit() }}>
+              {!isInvite ? <div className="space-y-2"><Label htmlFor="identity-name">Full name</Label><Input id="identity-name" autoComplete="username" value={name} onChange={(event) => setName(event.target.value)} placeholder="Your full name" required /></div> : null}
+              <div className="space-y-2"><Label htmlFor="password">Password</Label><Input id="password" type="password" autoComplete={isBootstrap || isInvite ? "new-password" : "current-password"} minLength={isBootstrap || isInvite ? 12 : undefined} value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
+              {isBootstrap || isInvite ? <div className="space-y-2"><Label htmlFor="password-confirmation">Confirm password</Label><Input id="password-confirmation" type="password" autoComplete="new-password" minLength={12} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required /></div> : null}
+              <Button size="lg" className="w-full" disabled={busy}>{busy ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <KeyRound data-icon="inline-start" />}<span>{busy ? "Please wait…" : isBootstrap ? "Create owner" : isInvite ? "Set password & continue" : "Sign in"}</span></Button>
+            </form>
+            <div className="mt-5 flex items-start justify-center gap-2 text-xs leading-5 text-muted-foreground"><LockKeyhole className="mt-0.5 size-3.5 shrink-0" /><span>RunTrace stores a salted scrypt hash, never the password itself. On plain HTTP, use this only on a trusted LAN.</span></div>
           </section>
         </div>
       </div>
@@ -119,35 +103,15 @@ function SetupScreen({ status, onComplete }: { status: AuthStatus; onComplete: (
   )
 }
 
-function PasskeyNote() {
-  return (
-    <div className="flex gap-4 rounded-xl border border-primary/25 bg-primary/[0.035] p-4">
-      <div className="grid size-11 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"><Fingerprint /></div>
-      <div><p className="font-medium">Passkeys are simpler and more secure</p><p className="mt-1 text-sm leading-5 text-muted-foreground">Use your device security or a hardware key. There is no password to remember or share.</p></div>
-    </div>
-  )
-}
-
-function BusyIcon({ busy }: { busy: boolean }) {
-  return busy ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <KeyRound data-icon="inline-start" />
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus | null>(null)
   const refresh = useCallback(async () => setStatus(await auth.status()), [])
 
-  useEffect(() => {
-    auth.status().then(setStatus).catch((error) => toast.error(readableError(error)))
-  }, [])
+  useEffect(() => { auth.status().then(setStatus).catch((error) => toast.error(readableError(error))) }, [])
 
   const value = useMemo<AuthContextValue | null>(() => {
     if (!status?.identity) return null
-    return {
-      status,
-      identity: status.identity,
-      refresh,
-      signOut: async () => { await auth.logout(); await refresh() },
-    }
+    return { status, identity: status.identity, refresh, signOut: async () => { await auth.logout(); await refresh() } }
   }, [refresh, status])
 
   if (!status) return <main className="grid min-h-screen place-items-center"><LoaderCircle className="size-6 animate-spin text-muted-foreground" aria-label="Loading RunTrace" /></main>

@@ -13,7 +13,7 @@ The repository contains the maintained FastAPI service, Next.js application, Pyt
 - completed-run baselines and best-so-far progress charts;
 - archive, restore, soft-delete, and audit history;
 - keyword search, with optional pgvector semantic retrieval;
-- browser passkey authentication for a self-hosted instance;
+- browser password authentication for a self-hosted instance;
 - revocable, expiring agent tokens for headless clients;
 - HTTP, Python, CLI, and MCP interfaces.
 
@@ -35,7 +35,7 @@ Requirements: Docker with Compose support. From the repository root:
 docker compose up --build
 ```
 
-Open <http://localhost:3000>. On a fresh database, the first browser enrolls the instance owner and a passkey. Data is stored in named PostgreSQL and artifact volumes and survives `docker compose down`.
+Open <http://localhost:3000>. On a fresh database, the first browser creates the instance owner and a password. Data is stored in named PostgreSQL and artifact volumes and survives `docker compose down`.
 
 To deploy the published GitHub Container packages instead of building locally:
 
@@ -80,16 +80,11 @@ In a second terminal:
 
 ```bash
 npm --prefix apps/web ci
-npm --prefix apps/web run dev:https
+npm --prefix apps/web run dev
 ```
 
-Open <https://localhost:3000>. Next.js generates a locally trusted `localhost`
-certificate with `mkcert`; the first run may ask for permission to install the
-local certificate authority. The server proxies `/api/*` to `INTERNAL_API_URL`,
-which defaults to `http://localhost:8000`.
-
-If HTTPS is unnecessary for a particular frontend-only task, `npm --prefix
-apps/web run dev` retains the plain HTTP development server.
+Open <http://localhost:3000>. The server proxies `/api/*` to
+`INTERNAL_API_URL`, which defaults to `http://localhost:8000`.
 
 ## Install the CLI and Python package
 
@@ -149,8 +144,8 @@ If the RunTrace CLI is already installed, `runtrace integrations install codex` 
 | `RUNTRACE_DEV` | Disable auth for trusted local development only |
 | `RUNTRACE_SEED_DEMO` | Seed an empty database with demo records |
 | `RUNTRACE_EMBEDDINGS_ENABLED` | Enable FastEmbed semantic indexing |
-| `RUNTRACE_WEBAUTHN_RP_ID` | Stable public hostname used by passkeys |
-| `RUNTRACE_WEBAUTHN_ORIGINS` | Comma-separated exact public HTTPS origins |
+| `RUNTRACE_SECURE_SESSION_COOKIE` | Mark browser cookies Secure when the public origin uses HTTPS |
+| `RUNTRACE_OWNER_RECOVERY_PASSWORD` | One-start owner password recovery; remove immediately after use |
 | `RUNTRACE_MAX_ARTIFACT_SIZE` | Maximum upload size in bytes |
 | `RUNTRACE_CLAIM_TIMEOUT_SECONDS` | Age at which abandoned claims are requeued |
 

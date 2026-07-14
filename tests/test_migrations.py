@@ -30,10 +30,12 @@ def test_existing_native_database_is_upgraded_to_current_schema(monkeypatch, tmp
 
     with sqlite3.connect(database) as connection:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(projects)")}
+        identity_columns = {row[1] for row in connection.execute("PRAGMA table_info(identities)")}
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
     assert {"progress_metric_key", "progress_metric_direction"}.issubset(columns)
     assert "search_documents" in tables
     assert "tag_definitions" in tables
     assert {"identities", "passkey_credentials", "auth_sessions", "auth_ceremonies", "api_tokens"}.issubset(tables)
-    assert revision == "0006_api_tokens"
+    assert "password_hash" in identity_columns
+    assert revision == "0007_password_auth"

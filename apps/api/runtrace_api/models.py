@@ -49,6 +49,7 @@ class Identity(Base):
     name: Mapped[str] = mapped_column(String(200), unique=True, index=True)
     role: Mapped[str] = mapped_column(String(32), default="member", index=True)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     setup_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     setup_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
