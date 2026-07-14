@@ -80,10 +80,16 @@ In a second terminal:
 
 ```bash
 npm --prefix apps/web ci
-npm --prefix apps/web run dev
+npm --prefix apps/web run dev:https
 ```
 
-The Next.js server proxies `/api/*` to `INTERNAL_API_URL`, which defaults to `http://localhost:8000`.
+Open <https://localhost:3000>. Next.js generates a locally trusted `localhost`
+certificate with `mkcert`; the first run may ask for permission to install the
+local certificate authority. The server proxies `/api/*` to `INTERNAL_API_URL`,
+which defaults to `http://localhost:8000`.
+
+If HTTPS is unnecessary for a particular frontend-only task, `npm --prefix
+apps/web run dev` retains the plain HTTP development server.
 
 ## Install the CLI and Python package
 

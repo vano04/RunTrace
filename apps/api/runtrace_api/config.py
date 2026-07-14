@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     dev: bool = False
     webauthn_rp_id: str = "localhost"
     webauthn_rp_name: str = "RunTrace"
-    webauthn_origins: str = "http://localhost:3000"
+    webauthn_origins: str = "https://localhost:3000"
     session_ttl_hours: int = 168
     setup_link_ttl_hours: int = 24
 
