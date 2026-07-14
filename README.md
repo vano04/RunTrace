@@ -37,7 +37,7 @@ docker compose up --build
 
 Open <http://localhost:3000>. On a fresh database, the first browser enrolls the instance owner and a passkey. Data is stored in named PostgreSQL and artifact volumes and survives `docker compose down`.
 
-To deploy the published multi-architecture GitHub Container packages instead of building locally:
+To deploy the published GitHub Container packages instead of building locally:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
