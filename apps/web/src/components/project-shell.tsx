@@ -24,21 +24,21 @@ function ProjectNavigation({ project, mobile = false }: { project: Project; mobi
     <div className="flex h-full flex-col">
       <div className="flex h-20 items-center border-b px-5"><RunTraceLogo /></div>
       <div className="border-b px-3 py-4">
-        <Button variant="ghost" className="w-full justify-start" render={<Link href="/" />}><ArrowLeft data-icon="inline-start" /><span className="truncate">{project.name}</span></Button>
+        <Button variant="ghost" className="w-full justify-start" render={<Link href="/" />} nativeButton={false}><ArrowLeft data-icon="inline-start" /><span className="truncate">{project.name}</span></Button>
       </div>
       <nav className="flex flex-col gap-1 p-3" aria-label="Project navigation">
         {navItems.map(({ label, suffix, icon: Icon }) => {
           const href = `${base}${suffix}`
           const active = suffix ? pathname === href : pathname === base
           return (
-            <Button key={label} variant={active ? "secondary" : "ghost"} className={cn("justify-start", active && "font-medium")} render={<Link href={href} />}>
+            <Button key={label} variant={active ? "secondary" : "ghost"} className={cn("justify-start", active && "font-medium")} render={<Link href={href} />} nativeButton={false}>
               <Icon data-icon="inline-start" />{label}
             </Button>
           )
         })}
       </nav>
       <div className="mt-auto border-t p-3">
-        <Button variant="ghost" className="w-full justify-start" render={<Link href="/docs" />}><BookOpen data-icon="inline-start" />Docs</Button>
+        <Button variant="ghost" className="w-full justify-start" render={<Link href="/docs" />} nativeButton={false}><BookOpen data-icon="inline-start" />Docs</Button>
         {mobile ? <p className="px-3 pt-2 text-xs text-muted-foreground">RunTrace v0.1</p> : null}
       </div>
     </div>

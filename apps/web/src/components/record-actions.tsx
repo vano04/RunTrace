@@ -1,18 +1,20 @@
 "use client"
 
 import { useState } from "react"
-import { Archive, MoreVertical, RotateCcw, Star, Trash2 } from "lucide-react"
+import { Archive, MoreVertical, Pencil, RotateCcw, Star, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { EditExperimentDialog } from "@/components/edit-experiment-dialog"
 import { runtrace } from "@/lib/api"
 
 export function RecordActions({ slug, id, type, archived = false, canBaseline = false, onChanged }: {
   slug: string; id: string; type: "experiment" | "run"; archived?: boolean; canBaseline?: boolean; onChanged: () => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   async function perform(action: "archive" | "restore" | "baseline" | "delete") {
     try {
       if (action === "baseline") await runtrace.setBaseline(slug, id)
@@ -36,6 +38,7 @@ export function RecordActions({ slug, id, type, archived = false, canBaseline = 
         <DropdownMenuContent align="end">
           <DropdownMenuGroup>
             {canBaseline ? <DropdownMenuItem onClick={() => perform("baseline")}><Star />Set as baseline</DropdownMenuItem> : null}
+            {type === "experiment" ? <DropdownMenuItem onClick={() => setEditOpen(true)}><Pencil />Edit</DropdownMenuItem> : null}
             <DropdownMenuItem onClick={() => perform(archived ? "restore" : "archive")}>
               {archived ? <RotateCcw /> : <Archive />}{archived ? "Restore" : "Archive"}
             </DropdownMenuItem>
@@ -49,6 +52,7 @@ export function RecordActions({ slug, id, type, archived = false, canBaseline = 
           <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => perform("delete")}>Delete</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {type === "experiment" ? <EditExperimentDialog slug={slug} id={id} open={editOpen} onOpenChange={setEditOpen} onUpdated={onChanged} /> : null}
     </>
   )
 }

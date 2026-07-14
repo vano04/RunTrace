@@ -25,9 +25,38 @@ def get_project_context(project: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def search_experiments(project: str, query: str, include_archived: bool = False, limit: int = 10) -> dict[str, Any]:
+def search_experiments(project: str, query: str, include_archived: bool = False, limit: int = 10, include_tags: list[str] | None = None, exclude_tags: list[str] | None = None) -> dict[str, Any]:
     """Search hypotheses, reasoning, changes, outcomes, and conclusions within a project."""
-    return request("POST", "/api/v1/search", {"project": project, "query": query, "include_archived": include_archived, "limit": limit})
+    payload: dict[str, Any] = {"project": project, "query": query, "include_archived": include_archived, "limit": limit}
+    if include_tags:
+        payload["include_tags"] = include_tags
+    if exclude_tags:
+        payload["exclude_tags"] = exclude_tags
+    return request("POST", "/api/v1/search", payload)
+
+
+@mcp.tool()
+def list_tags(project: str) -> list[dict[str, Any]]:
+    """List the available project tags, including rule-backed tags."""
+    return request("GET", f"/api/v1/projects/{project}/tags")
+
+
+@mcp.tool()
+def create_tag(project: str, name: str) -> dict[str, Any]:
+    """Register a new project tag."""
+    return request("POST", f"/api/v1/projects/{project}/tags", {"name": name})
+
+
+@mcp.tool()
+def update_tag(project: str, tag_id: str, name: str) -> dict[str, Any]:
+    """Rename a registered tag and update its explicit uses."""
+    return request("PATCH", f"/api/v1/projects/{project}/tags/{tag_id}", {"name": name})
+
+
+@mcp.tool()
+def delete_tag(project: str, tag_id: str) -> None:
+    """Delete a registered tag and remove its explicit uses."""
+    return request("DELETE", f"/api/v1/projects/{project}/tags/{tag_id}")
 
 
 @mcp.tool()
@@ -79,4 +108,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

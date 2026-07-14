@@ -1,15 +1,16 @@
 def test_project_creation_initializes_context_and_lists_project(fresh_database):
-    created = fresh_database.post("/api/v1/projects", json={"name": "Compiler Optimizer", "slug": "compiler-optimizer", "description": "Compile faster"})
+    created = fresh_database.post("/api/v1/projects", json={"name": "Compiler Optimizer", "slug": "compiler-optimizer", "description": "Compile faster", "repository_url": "https://github.com/example/compiler-optimizer"})
     assert created.status_code == 201
     assert fresh_database.post("/api/v1/projects", json={"name": "Duplicate", "slug": "compiler-optimizer"}).status_code == 409
     assert fresh_database.get("/health").json()["status"] == "ok"
     assert fresh_database.get("/api/v1/projects/compiler-optimizer").json()["description"] == "Compile faster"
     updated = fresh_database.patch(
         "/api/v1/projects/compiler-optimizer",
-        json={"description": "Reduce compile time without changing output"},
+        json={"description": "Reduce compile time without changing output", "repository_url": "https://github.com/example/compiler-optimizer-v2"},
     )
     assert updated.status_code == 200
     assert updated.json()["description"] == "Reduce compile time without changing output"
+    assert updated.json()["repository_url"] == "https://github.com/example/compiler-optimizer-v2"
     assert "compiler-optimizer" in {project["slug"] for project in fresh_database.get("/api/v1/projects").json()}
     assert fresh_database.get("/api/v1/projects/compiler-optimizer/program").json() == {
         "content": "# Compiler Optimizer\n", "version": 1, "created_at": fresh_database.get("/api/v1/projects/compiler-optimizer/program").json()["created_at"]
@@ -118,6 +119,27 @@ def test_imported_autoresearch_runtime_fallback_tags(fresh_database):
 
     assert fresh_database.get(f"/api/v1/runs/{early_id}").json()["tags"] == ["early stop"]
     assert fresh_database.get(f"/api/v1/runs/{long_id}").json()["tags"] == ["long run"]
+
+
+def test_tag_registry_crud_renames_rule_tags_and_removes_explicit_uses(fresh_database):
+    tags = fresh_database.get("/api/v1/projects/dense-optimizer/tags").json()
+    early = next(tag for tag in tags if tag["name"] == "early stop")
+    renamed = fresh_database.patch(f"/api/v1/projects/dense-optimizer/tags/{early['id']}", json={"name": "short run"})
+    assert renamed.status_code == 200
+    assert renamed.json()["rule_key"] == "autoresearch_early_stop"
+
+    inferred_id = fresh_database.post(
+        "/api/v1/projects/dense-optimizer/runs",
+        json={"name": "Short", "configuration": {"source_file": "results.tsv", "autoresearch_status": "discard"}},
+    ).json()["id"]
+    fresh_database.post(f"/api/v1/runs/{inferred_id}/metrics", json={"metrics": [{"name": "train_time_s", "value": 900}]})
+    assert fresh_database.get(f"/api/v1/runs/{inferred_id}").json()["tags"] == ["short run"]
+
+    created = fresh_database.post("/api/v1/projects/dense-optimizer/tags", json={"name": "nightly"})
+    assert created.status_code == 201
+    run_id = fresh_database.post("/api/v1/projects/dense-optimizer/runs", json={"name": "Tagged", "configuration": {"tags": ["nightly"]}}).json()["id"]
+    assert fresh_database.delete(f"/api/v1/projects/dense-optimizer/tags/{created.json()['id']}").status_code == 204
+    assert fresh_database.get(f"/api/v1/runs/{run_id}").json()["tags"] == []
 
 
 def test_experiment_delete_and_claim_next(fresh_database):

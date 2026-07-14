@@ -101,6 +101,15 @@ export interface Dashboard {
   worker_count: number
   available_metrics: string[]
   available_tags: string[]
+  tag_definitions: TagDefinition[]
+}
+
+export interface TagDefinition {
+  id: string
+  name: string
+  rule_key: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface ProgressPoint {
@@ -108,6 +117,7 @@ export interface ProgressPoint {
   display_id: string
   name: string
   timestamp: string
+  timestamp_is_inferred?: boolean
   raw_value: number
   best_value: number
   is_improvement: boolean
@@ -143,6 +153,8 @@ export interface SearchResult {
   archived: boolean
   tags: string[]
   score: number
+  timestamp: string
+  metric_value: number | null
   semantic_score?: number
   match_type?: "keyword" | "semantic" | "hybrid"
 }

@@ -18,22 +18,20 @@ services:
       context: .
       dockerfile: Dockerfile.api
     environment:
-      RUNTRACE_DATABASE_URL: postgresql+psycopg://runtrace:runtrace@postgres:5432/runtrace
+      RUNTRACE_DATABASE_URL: sqlite:////data/runtrace.db
       RUNTRACE_ARTIFACT_PATH: /data/artifacts
       RUNTRACE_CORS_ORIGINS: http://localhost:3000
       RUNTRACE_SEED_DEMO: "false"
       RUNTRACE_AUTO_MIGRATE: "false"
-      RUNTRACE_EMBEDDINGS_ENABLED: "true"
-      RUNTRACE_EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
-      RUNTRACE_EMBEDDING_CACHE_PATH: /data/models
+      RUNTRACE_EMBEDDINGS_ENABLED: "false"
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
+      - ./data/runtrace.db:/data/runtrace.db
       - runtrace-artifacts:/data/artifacts
-      - runtrace-models:/data/models
 
   mcp:
     build:

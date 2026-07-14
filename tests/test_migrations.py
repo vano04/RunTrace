@@ -34,4 +34,5 @@ def test_existing_native_database_is_upgraded_to_current_schema(monkeypatch, tmp
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
     assert {"progress_metric_key", "progress_metric_direction"}.issubset(columns)
     assert "search_documents" in tables
-    assert revision == "0003_vector_search"
+    assert "tag_definitions" in tables
+    assert revision == "0004_tag_registry"

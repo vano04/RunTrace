@@ -1,10 +1,12 @@
 "use client"
 
-import { Filter, MinusCircle, PlusCircle, X } from "lucide-react"
+import { Filter, Minus, Plus, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+
+type FilterState = "include" | "exclude" | "neutral"
 
 export function TagFilter({ tags, include, exclude, onChange }: {
   tags: string[]
@@ -12,39 +14,43 @@ export function TagFilter({ tags, include, exclude, onChange }: {
   exclude: string[]
   onChange: (include: string[], exclude: string[]) => void
 }) {
-  const toggleInclude = (tag: string, checked: boolean) => onChange(
-    checked ? [...include, tag] : include.filter((value) => value !== tag),
-    checked ? exclude.filter((value) => value !== tag) : exclude,
+  const stateFor = (tag: string): FilterState => include.includes(tag) ? "include" : exclude.includes(tag) ? "exclude" : "neutral"
+  const setState = (tag: string, state: FilterState) => onChange(
+    state === "include" ? [...include.filter((value) => value !== tag), tag] : include.filter((value) => value !== tag),
+    state === "exclude" ? [...exclude.filter((value) => value !== tag), tag] : exclude.filter((value) => value !== tag),
   )
-  const toggleExclude = (tag: string, checked: boolean) => onChange(
-    checked ? include.filter((value) => value !== tag) : include,
-    checked ? [...exclude, tag] : exclude.filter((value) => value !== tag),
-  )
-  const active = include.length + exclude.length
+  const cycle = (tag: string) => setState(tag, stateFor(tag) === "neutral" ? "include" : stateFor(tag) === "include" ? "exclude" : "neutral")
+  const active = [...include.map((tag) => ({ tag, state: "include" as const })), ...exclude.map((tag) => ({ tag, state: "exclude" as const }))]
 
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <DropdownMenu>
-        <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" />}>
-          <Filter data-icon="inline-start" />Tags{active ? ` (${active})` : ""}
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          {tags.length ? <>
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Include all selected</DropdownMenuLabel>
-              {tags.map((tag) => <DropdownMenuCheckboxItem key={`include-${tag}`} checked={include.includes(tag)} onCheckedChange={(checked) => toggleInclude(tag, checked === true)}><PlusCircle />{tag}</DropdownMenuCheckboxItem>)}
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Exclude any selected</DropdownMenuLabel>
-              {tags.map((tag) => <DropdownMenuCheckboxItem key={`exclude-${tag}`} checked={exclude.includes(tag)} onCheckedChange={(checked) => toggleExclude(tag, checked === true)}><MinusCircle />{tag}</DropdownMenuCheckboxItem>)}
-            </DropdownMenuGroup>
-          </> : <DropdownMenuGroup><DropdownMenuLabel>No tags recorded</DropdownMenuLabel></DropdownMenuGroup>}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {include.map((tag) => <Badge key={`included-${tag}`} variant="secondary">+ {tag}<button type="button" aria-label={`Remove included tag ${tag}`} onClick={() => toggleInclude(tag, false)}><X /></button></Badge>)}
-      {exclude.map((tag) => <Badge key={`excluded-${tag}`} variant="outline">− {tag}<button type="button" aria-label={`Remove excluded tag ${tag}`} onClick={() => toggleExclude(tag, false)}><X /></button></Badge>)}
-      {active ? <Button type="button" size="sm" variant="ghost" onClick={() => onChange([], [])}>Clear</Button> : null}
-    </div>
-  )
+  return <div className="flex flex-wrap items-center gap-2">
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" />}>
+        <Filter data-icon="inline-start" />Filter{active.length ? ` (${active.length})` : ""}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72 p-3">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="px-0 pb-2 pt-0">Click to include, exclude, or clear</DropdownMenuLabel>
+          {tags.length ? <div className="flex flex-col gap-1">
+          {tags.map((tag) => {
+            const state = stateFor(tag)
+            return <DropdownMenuItem
+              key={tag}
+              closeOnClick={false}
+              onClick={() => cycle(tag)}
+              aria-label={`${tag}: ${state}`}
+            >
+              {state === "include" ? <Plus /> : state === "exclude" ? <Minus /> : <span className="size-4" />}
+              <span className="flex-1">{tag}</span>
+              <Badge variant={state === "include" ? "default" : state === "exclude" ? "destructive" : "outline"}>{state}</Badge>
+            </DropdownMenuItem>
+          })}
+          </div> : <p className="text-xs text-muted-foreground">No filters registered</p>}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+    {active.map(({ tag, state }) => <Badge
+      key={`${state}-${tag}`}
+      variant={state === "include" ? "default" : "destructive"}
+    >{state === "include" ? <Plus /> : <Minus />}{tag}<button type="button" aria-label={`Remove ${tag} filter`} onClick={() => setState(tag, "neutral")}><X /></button></Badge>)}
+  </div>
 }

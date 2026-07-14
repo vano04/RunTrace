@@ -12,6 +12,7 @@ from .models import (
     Run,
     RunEvent,
     RunMetric,
+    TagDefinition,
     WorkerObservation,
 )
 
@@ -45,6 +46,11 @@ def seed_demo(session: Session) -> None:
     )
     session.add_all([dense, flash, sparse])
     session.flush()
+    session.add_all([
+        TagDefinition(project_id=project.id, name=name, rule_key=rule_key)
+        for project in (dense, flash, sparse)
+        for name, rule_key in (("early stop", "autoresearch_early_stop"), ("long run", "autoresearch_long_run"))
+    ])
 
     program = """# Dense Optimizer
 
@@ -107,4 +113,3 @@ Use feature flags for experimental paths. Record config, commit, metrics, and co
         session.add(ExclusionVersion(project_id=project.id, version=1, rules=rules, actor="demo-seed"))
 
     session.commit()
-

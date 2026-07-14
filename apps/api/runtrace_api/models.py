@@ -36,6 +36,21 @@ class Project(Base):
 
     experiments: Mapped[list[Experiment]] = relationship(back_populates="project", cascade="all, delete-orphan")
     runs: Mapped[list[Run]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    tag_definitions: Mapped[list[TagDefinition]] = relationship(back_populates="project", cascade="all, delete-orphan")
+
+
+class TagDefinition(Base):
+    __tablename__ = "tag_definitions"
+    __table_args__ = (UniqueConstraint("project_id", "name"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("tag"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    rule_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+    project: Mapped[Project] = relationship(back_populates="tag_definitions")
 
 
 class ProgramVersion(Base):

@@ -27,6 +27,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -70,6 +71,7 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
+  --success: oklch(0.52 0.15 155);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.58 0.18 264);
@@ -111,6 +113,7 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.72 0.17 155);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
@@ -136,6 +139,8 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "ss01", "cv02", "cv03";
+    background-image: radial-gradient(circle at 50% -20%, color-mix(in oklch, var(--primary) 7%, transparent), transparent 32rem);
+    background-attachment: fixed;
   }
   html {
     @apply font-sans;
@@ -152,4 +157,7 @@
   .status-kept { @apply bg-status-kept; }
   .status-discarded { @apply bg-status-neutral; }
   .status-crashed { @apply bg-status-crashed; }
+
+  html[data-density="compact"] [data-slot="table-head"] { @apply h-8; }
+  html[data-density="compact"] [data-slot="table-cell"] { @apply py-1.5; }
 }

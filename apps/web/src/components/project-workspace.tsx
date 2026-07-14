@@ -1,7 +1,7 @@
 "use client"
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Activity, Archive, Copy, Database, FileText, FlaskConical, Search, ShieldCheck } from "lucide-react"
+import { Activity, Archive, ArrowDownUp, Copy, Database, FileText, FlaskConical, Plus, Save, Search, ShieldCheck, Tags, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { CreateExperimentDialog } from "@/components/create-experiment-dialog"
@@ -17,6 +17,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -48,6 +50,14 @@ function DashboardView({ data, progress, slug, reload, setProgress, openRun, onP
   const [includeTags, setIncludeTags] = useState<string[]>([])
   const [excludeTags, setExcludeTags] = useState<string[]>([])
   const queue = useMemo(() => [...data.active_runs, ...data.experiments.filter((item) => ["proposed", "pending", "running"].includes(item.lifecycle))], [data])
+  const metricOptions = useMemo(() => Array.from(new Set([data.project.progress_metric_key, ...data.available_metrics])).map((value) => ({ label: value, value })), [data])
+  const windowOptions = [
+    { label: "24 hours", value: "1d" },
+    { label: "7 days", value: "7d" },
+    { label: "30 days", value: "30d" },
+    { label: "90 days", value: "90d" },
+    { label: "All time", value: "all" },
+  ]
 
   async function changeProgress(nextMetric: string, nextWindow: string, nextInclude = includeTags, nextExclude = excludeTags) {
     setMetric(nextMetric); setWindow(nextWindow)
@@ -59,12 +69,16 @@ function DashboardView({ data, progress, slug, reload, setProgress, openRun, onP
   return <>
     <PageHeading title="Dashboard" description={data.project.description || "Add a durable research goal in Settings so every agent starts from the same objective."} actions={<CreateExperimentDialog slug={slug} onCreated={reload} />} />
     <Card className="mb-6 overflow-hidden py-0">
-      <CardHeader className="flex flex-col gap-4 border-b py-5 sm:flex-row sm:items-start sm:justify-between">
-        <div><CardTitle>Autoresearch progress</CardTitle><CardDescription>Strict best-so-far improvement over the first completed run in this window.</CardDescription></div>
-        <div className="flex flex-wrap gap-2">
-          <Select value={metric} onValueChange={(value) => value && changeProgress(String(value), window)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{Array.from(new Set([data.project.progress_metric_key, ...data.available_metrics])).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectGroup></SelectContent></Select>
-          <Select value={window} onValueChange={(value) => value && changeProgress(metric, String(value))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="7d">7 days</SelectItem><SelectItem value="30d">30 days</SelectItem><SelectItem value="all">All time</SelectItem></SelectGroup></SelectContent></Select>
+      <CardHeader className="flex flex-col gap-4 border-b py-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div><CardTitle>Autoresearch progress</CardTitle><CardDescription>Strict best-so-far improvement over the first completed run in this window.</CardDescription></div>
+        </div>
+        <div className="flex w-full flex-wrap items-center justify-between gap-2">
           <TagFilter tags={data.available_tags} include={includeTags} exclude={excludeTags} onChange={(nextInclude, nextExclude) => { setIncludeTags(nextInclude); setExcludeTags(nextExclude); changeProgress(metric, window, nextInclude, nextExclude) }} />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Select items={metricOptions} value={metric} onValueChange={(value) => value && changeProgress(String(value), window)}><SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{metricOptions.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent></Select>
+            <Select items={windowOptions} value={window} onValueChange={(value) => value && changeProgress(metric, String(value))}><SelectTrigger className="w-[118px]"><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{windowOptions.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent></Select>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="p-4 sm:p-6"><ProgressChart data={progress} /></CardContent>
@@ -87,30 +101,72 @@ function DashboardView({ data, progress, slug, reload, setProgress, openRun, onP
       })}</TableBody></Table></div> : <Empty className="min-h-56 border"><EmptyHeader><EmptyMedia variant="icon"><FlaskConical /></EmptyMedia><EmptyTitle>The queue is empty</EmptyTitle><EmptyDescription>Propose an experiment here or let a planning agent add one through MCP.</EmptyDescription></EmptyHeader></Empty>}
     </section>
 
-    <section>
+    <section className="flex h-[calc(100dvh-2.5rem)] min-h-[32rem] flex-col">
       <div className="mb-4"><h2 className="text-lg font-semibold">Recent completed experiments</h2><p className="mt-1 text-sm text-muted-foreground">Durable evidence available to future agents.</p></div>
-      {data.history.length ? <div className="overflow-hidden rounded-lg border"><Table><TableHeader><TableRow><TableHead>Run</TableHead><TableHead className="hidden md:table-cell">Finished</TableHead><TableHead>Result</TableHead><TableHead>Disposition</TableHead><TableHead className="w-12"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{data.history.slice(0, 12).map((run) => <TableRow key={run.id} className="cursor-pointer" onClick={() => openRun(run.id)}><TableCell><span className="font-mono text-xs text-muted-foreground">{run.display_id}</span><strong className="mt-1 block max-w-sm truncate text-sm">{run.name}</strong></TableCell><TableCell className="hidden text-xs text-muted-foreground md:table-cell">{formatDate(run.finished_at)}</TableCell><TableCell className="max-w-xs truncate font-mono text-xs">{run.result_summary || latestMetric(run, data.project.progress_metric_key)}</TableCell><TableCell><StatusBadge value={run.lifecycle === "crashed" ? "crashed" : run.disposition} /></TableCell><TableCell onClick={(event) => event.stopPropagation()}><RecordActions slug={slug} id={run.id} type="run" canBaseline={run.lifecycle === "completed"} onChanged={reload} /></TableCell></TableRow>)}</TableBody></Table></div> : <Empty className="min-h-48 border"><EmptyHeader><EmptyMedia variant="icon"><Activity /></EmptyMedia><EmptyTitle>No completed runs</EmptyTitle><EmptyDescription>Tracked runs will appear here after an agent finishes or crashes them.</EmptyDescription></EmptyHeader></Empty>}
+      {data.history.length ? <ScrollArea className="min-h-0 flex-1 overflow-hidden rounded-xl ring-1 ring-foreground/10 [&_[data-slot=table-container]]:overflow-visible [&>[data-slot=scroll-area-scrollbar]]:!top-10 [&>[data-slot=scroll-area-scrollbar]]:h-[calc(100%-2.5rem)]"><Table><TableHeader className="sticky top-0 z-10 bg-card"><TableRow><TableHead>Run</TableHead><TableHead className="hidden md:table-cell">Finished</TableHead><TableHead>Result</TableHead><TableHead>Disposition</TableHead><TableHead className="w-12"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader><TableBody>{data.history.map((run) => <TableRow key={run.id} className="cursor-pointer" onClick={() => openRun(run.id)}><TableCell><span className="font-mono text-xs text-muted-foreground">{run.display_id}</span><strong className="mt-1 block max-w-sm truncate text-sm">{run.name}</strong></TableCell><TableCell className="hidden text-xs text-muted-foreground md:table-cell">{formatDate(run.finished_at)}</TableCell><TableCell className="max-w-xs truncate font-mono text-xs">{run.result_summary || latestMetric(run, data.project.progress_metric_key)}</TableCell><TableCell><StatusBadge value={run.lifecycle === "crashed" ? "crashed" : run.disposition} /></TableCell><TableCell onClick={(event) => event.stopPropagation()}><RecordActions slug={slug} id={run.id} type="run" canBaseline={run.lifecycle === "completed"} onChanged={reload} /></TableCell></TableRow>)}</TableBody></Table></ScrollArea> : <Empty className="min-h-48 flex-1 border"><EmptyHeader><EmptyMedia variant="icon"><Activity /></EmptyMedia><EmptyTitle>No completed runs</EmptyTitle><EmptyDescription>Tracked runs will appear here after an agent finishes or crashes them.</EmptyDescription></EmptyHeader></Empty>}
     </section>
   </>
 }
+
+const SEARCH_ORDERS = [
+  { label: "Newest first", value: "newest" },
+  { label: "Oldest first", value: "oldest" },
+  { label: "Lowest metric", value: "metric-low" },
+  { label: "Highest metric", value: "metric-high" },
+  { label: "Best match", value: "relevance" },
+]
+
+type SearchOrder = typeof SEARCH_ORDERS[number]["value"]
 
 function SearchView({ data, slug, reload, openRun }: { data: Dashboard; slug: string; reload: () => void; openRun: (id: string) => void }) {
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
   const [searched, setSearched] = useState(false)
-  const [pending, setPending] = useState(false)
+  const [pending, setPending] = useState(true)
   const [includeTags, setIncludeTags] = useState<string[]>([])
   const [excludeTags, setExcludeTags] = useState<string[]>([])
+  const [order, setOrder] = useState<SearchOrder>("newest")
+  useEffect(() => {
+    let active = true
+    runtrace.search(slug, "").then((response) => {
+      if (active) { setResults(response.results); setSearched(true) }
+    }).catch((error) => {
+      if (active) toast.error(error instanceof Error ? error.message : "Could not load experiment evidence")
+    }).finally(() => { if (active) setPending(false) })
+    return () => { active = false }
+  }, [slug])
   async function runSearch(nextInclude = includeTags, nextExclude = excludeTags) { setPending(true); try { const response = await runtrace.search(slug, query, false, nextInclude, nextExclude); setResults(response.results); setSearched(true) } catch (error) { toast.error(error instanceof Error ? error.message : "Search failed") } finally { setPending(false) } }
   async function submit(event: FormEvent) { event.preventDefault(); await runSearch() }
   function filtersChanged(nextInclude: string[], nextExclude: string[]) { setIncludeTags(nextInclude); setExcludeTags(nextExclude); if (searched) runSearch(nextInclude, nextExclude) }
   function recordChanged() { reload(); runSearch() }
-  return <><PageHeading title="Search" description={`Semantic and keyword retrieval across ${data.project.name} experiments, reasoning, configurations, outcomes, and conclusions.`} />
-    <form onSubmit={submit} className="mb-4 flex gap-2"><label className="relative flex-1"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="h-11 pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="What has already been tried?" aria-label="Search experiment evidence" /></label><Button className="h-11" type="submit" disabled={pending || (!query.trim() && !includeTags.length && !excludeTags.length)}>{pending ? "Searching…" : "Search"}</Button></form>
-    <div className="mb-8"><TagFilter tags={data.available_tags} include={includeTags} exclude={excludeTags} onChange={filtersChanged} /></div>
+  const orderedResults = useMemo(() => results.toSorted((left, right) => {
+    const newest = new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()
+    if (order === "newest") return newest
+    if (order === "oldest") return -newest
+    if (order === "relevance") return right.score - left.score || newest
+    const leftMetric = left.metric_value
+    const rightMetric = right.metric_value
+    if (leftMetric == null && rightMetric == null) return newest
+    if (leftMetric == null) return 1
+    if (rightMetric == null) return -1
+    return order === "metric-low" ? leftMetric - rightMetric || newest : rightMetric - leftMetric || newest
+  }), [order, results])
+  return <div className="flex h-[calc(100dvh-7.5rem)] min-h-[32rem] flex-col lg:h-[calc(100dvh-5rem)]"><PageHeading title="Search" description={`Semantic and keyword retrieval across ${data.project.name} experiments, reasoning, configurations, outcomes, and conclusions.`} />
+    <form onSubmit={submit} className="mb-4 flex flex-col gap-2 sm:flex-row">
+      <InputGroup className="h-10 flex-1">
+        <InputGroupInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="What has already been tried?" aria-label="Search experiment evidence" />
+        <InputGroupAddon><Search /></InputGroupAddon>
+        <InputGroupAddon align="inline-end"><InputGroupButton type="submit" variant="default" disabled={pending}>{pending ? "Searching…" : "Search"}</InputGroupButton></InputGroupAddon>
+      </InputGroup>
+      <Select items={SEARCH_ORDERS} value={order} onValueChange={(value) => value && setOrder(String(value) as SearchOrder)}>
+        <SelectTrigger className="h-10 w-full sm:w-44" aria-label="Order search results"><ArrowDownUp /><SelectValue /></SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}><SelectGroup>{SEARCH_ORDERS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+      </Select>
+    </form>
+    <div className="mb-6"><TagFilter tags={data.available_tags} include={includeTags} exclude={excludeTags} onChange={filtersChanged} /></div>
     {searched && !results.length ? <Empty className="min-h-64 border"><EmptyHeader><EmptyMedia variant="icon"><Search /></EmptyMedia><EmptyTitle>No matching evidence</EmptyTitle><EmptyDescription>Try a broader description, metric name, or implementation detail.</EmptyDescription></EmptyHeader></Empty> : null}
-    <div className="divide-y border-y">{results.map((result) => <div key={`${result.kind}-${result.id}`} className="grid gap-3 py-5 sm:grid-cols-[1fr_auto]"><button type="button" onClick={() => result.kind === "run" && openRun(result.id)} className="min-w-0 text-left"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-xs text-muted-foreground">{result.display_id}</span><Badge variant="secondary">{result.kind}</Badge>{result.match_type ? <Badge variant="outline">{result.match_type}</Badge> : null}{result.tags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}</div><h2 className="mt-2 font-medium">{result.title}</h2><p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{result.conclusion || result.result_summary || result.hypothesis}</p></button><div className="flex items-start gap-2"><StatusBadge value={result.lifecycle === "completed" ? result.disposition : result.lifecycle} /><RecordActions slug={slug} id={result.id} type={result.kind} archived={result.archived} canBaseline={result.kind === "run" && result.lifecycle === "completed"} onChanged={recordChanged} /></div></div>)}</div>
-  </>
+    {orderedResults.length ? <Card className="min-h-0 flex-1 gap-0 py-0"><CardHeader className="border-b py-4"><CardTitle>Experiment evidence</CardTitle><CardDescription>{orderedResults.length} records · ordered {SEARCH_ORDERS.find((item) => item.value === order)?.label.toLowerCase()}</CardDescription></CardHeader><ScrollArea className="min-h-0 flex-1"><CardContent className="divide-y p-0">{orderedResults.map((result) => <div key={`${result.kind}-${result.id}`} className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_auto]"><button type="button" onClick={() => result.kind === "run" && openRun(result.id)} className="min-w-0 text-left"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-xs text-muted-foreground">{result.display_id}</span><Badge variant="secondary">{result.kind}</Badge>{result.match_type ? <Badge variant="outline">{result.match_type}</Badge> : null}{result.tags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}</div><h2 className="mt-2 font-medium">{result.title}</h2><p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{result.conclusion || result.result_summary || result.hypothesis}</p><p className="mt-2 text-xs text-muted-foreground">{formatDate(result.timestamp)}{result.metric_value == null ? "" : ` · ${data.project.progress_metric_key}: ${result.metric_value}`}</p></button><div className="flex items-start gap-2"><StatusBadge value={result.lifecycle === "completed" ? result.disposition : result.lifecycle} /><RecordActions slug={slug} id={result.id} type={result.kind} archived={result.archived} canBaseline={result.kind === "run" && result.lifecycle === "completed"} onChanged={recordChanged} /></div></div>)}</CardContent></ScrollArea></Card> : null}
+  </div>
 }
 
 function ArchiveView({ data, slug, reload, openRun }: { data: Dashboard; slug: string; reload: () => void; openRun: (id: string) => void }) {
@@ -121,19 +177,31 @@ function ArchiveView({ data, slug, reload, openRun }: { data: Dashboard; slug: s
 
 function SettingsView({ data, slug, reload }: { data: Dashboard; slug: string; reload: () => void }) {
   const [description, setDescription] = useState(data.project.description)
+  const [repositoryUrl, setRepositoryUrl] = useState(data.project.repository_url ?? "")
   const [program, setProgram] = useState(data.program.content)
   const [exclusions, setExclusions] = useState(data.exclusions.join("\n"))
   const [metric, setMetric] = useState(data.project.progress_metric_key)
   const [direction, setDirection] = useState(data.project.progress_metric_direction)
   const [pending, setPending] = useState(false)
-  async function save(event: FormEvent) { event.preventDefault(); setPending(true); try { await Promise.all([runtrace.updateProject(slug, description), runtrace.updateProgram(slug, program), runtrace.updateExclusions(slug, exclusions.split("\n")), runtrace.updateSettings(slug, metric, direction)]); toast.success("Project settings saved"); reload() } catch (error) { toast.error(error instanceof Error ? error.message : "Could not save settings") } finally { setPending(false) } }
+  const [tagNames, setTagNames] = useState<Record<string, string>>(() => Object.fromEntries(data.tag_definitions.map((tag) => [tag.id, tag.name])))
+  const [newTag, setNewTag] = useState("")
+  const [tagPending, setTagPending] = useState<string | null>(null)
+  async function save(event: FormEvent) { event.preventDefault(); setPending(true); try { await Promise.all([runtrace.updateProject(slug, description, repositoryUrl), runtrace.updateProgram(slug, program), runtrace.updateExclusions(slug, exclusions.split("\n")), runtrace.updateSettings(slug, metric, direction)]); toast.success("Project settings saved"); reload() } catch (error) { toast.error(error instanceof Error ? error.message : "Could not save settings") } finally { setPending(false) } }
+  async function addTag() { const name = newTag.trim(); if (!name) return; setTagPending("new"); try { await runtrace.createTag(slug, name); setNewTag(""); toast.success("Filter created"); reload() } catch (error) { toast.error(error instanceof Error ? error.message : "Could not create filter") } finally { setTagPending(null) } }
+  async function renameTag(id: string) { const name = tagNames[id]?.trim(); if (!name) return; setTagPending(id); try { await runtrace.updateTag(slug, id, name); toast.success("Filter updated"); reload() } catch (error) { toast.error(error instanceof Error ? error.message : "Could not update filter") } finally { setTagPending(null) } }
+  async function removeTag(id: string, name: string) { if (!window.confirm(`Delete “${name}”? It will also be removed from existing runs and experiments.`)) return; setTagPending(id); try { await runtrace.deleteTag(slug, id); toast.success("Filter deleted"); reload() } catch (error) { toast.error(error instanceof Error ? error.message : "Could not delete filter") } finally { setTagPending(null) } }
   const bootstrap = `runtrace.get_project_context({ project: "${slug}" })`
   return <form onSubmit={save}><PageHeading title="Settings" description="Durable research context returned to every agent that bootstraps this project." actions={<Button type="submit" disabled={pending}>{pending ? "Saving…" : "Save changes"}</Button>} />
     <div className="flex flex-col gap-6">
       <Card><CardHeader><CardTitle>Project goal</CardTitle><CardDescription>Shown on the dashboard and used to orient human supervisors.</CardDescription></CardHeader><CardContent><Field><FieldLabel htmlFor="goal">Goal</FieldLabel><Textarea id="goal" value={description} onChange={(event) => setDescription(event.target.value)} /></Field></CardContent></Card>
+      <Card><CardHeader><CardTitle>Project repository</CardTitle><CardDescription>Source repository associated with this project.</CardDescription></CardHeader><CardContent><Field><FieldLabel htmlFor="repository-url">Repository URL</FieldLabel><Input id="repository-url" type="url" value={repositoryUrl} onChange={(event) => setRepositoryUrl(event.target.value)} placeholder="https://github.com/org/repo" /><FieldDescription>Set during project creation or update it here.</FieldDescription></Field></CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><FileText className="size-4" />program.md <Badge variant="secondary">v{data.program.version}</Badge></CardTitle><CardDescription>The objective, evaluation contract, implementation boundaries, and evidence required to keep a change.</CardDescription></CardHeader><CardContent><Field><FieldLabel htmlFor="program" className="sr-only">program.md</FieldLabel><Textarea id="program" className="min-h-72 font-mono text-xs leading-6" value={program} onChange={(event) => setProgram(event.target.value)} /></Field></CardContent></Card>
       <Card id="exclusions"><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4" />Research exclusions</CardTitle><CardDescription>One durable constraint per line. These guide agents but do not control workers.</CardDescription></CardHeader><CardContent><Field><FieldLabel htmlFor="exclusions" className="sr-only">Research exclusions</FieldLabel><Textarea id="exclusions" className="min-h-32 font-mono text-xs leading-6" value={exclusions} onChange={(event) => setExclusions(event.target.value)} placeholder="Do not use…" /></Field></CardContent></Card>
       <Card><CardHeader><CardTitle>Progress metric</CardTitle><CardDescription>Use the exact metric name emitted by the SDK or agent.</CardDescription></CardHeader><CardContent><FieldGroup><Field><FieldLabel htmlFor="metric">Metric name</FieldLabel><Input id="metric" className="font-mono" value={metric} onChange={(event) => setMetric(event.target.value)} list="available-metrics" /><datalist id="available-metrics">{data.available_metrics.map((value) => <option value={value} key={value} />)}</datalist></Field><Field><FieldLabel>Direction</FieldLabel><Select value={direction} onValueChange={(value) => value && setDirection(String(value) as typeof direction)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="lower_is_better">Lower is better</SelectItem><SelectItem value="higher_is_better">Higher is better</SelectItem></SelectGroup></SelectContent></Select></Field></FieldGroup></CardContent></Card>
+      <Card><CardHeader><CardTitle className="flex items-center gap-2"><Tags className="size-4" />Filters</CardTitle><CardDescription>Register tags used by dashboards, search, the HTTP API, and MCP. Rule-backed filters keep their behavior when renamed.</CardDescription></CardHeader><CardContent className="space-y-4">
+        <div className="flex gap-2"><Input value={newTag} onChange={(event) => setNewTag(event.target.value)} placeholder="New filter name" aria-label="New filter name" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTag() } }} /><Button type="button" variant="secondary" onClick={addTag} disabled={!newTag.trim() || tagPending === "new"}><Plus />Add</Button></div>
+        <div className="divide-y rounded-lg border">{data.tag_definitions.map((tag) => <div key={tag.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><Input value={tagNames[tag.id] ?? tag.name} onChange={(event) => setTagNames((current) => ({ ...current, [tag.id]: event.target.value }))} aria-label={`Filter name ${tag.name}`} /><p className="mt-1 text-xs text-muted-foreground">{tag.rule_key ? "Automatically assigned from autoresearch run data" : "Registered tag"}</p></div><div className="flex gap-2"><Button type="button" size="sm" variant="outline" disabled={tagPending === tag.id || !tagNames[tag.id]?.trim() || tagNames[tag.id]?.trim() === tag.name} onClick={() => renameTag(tag.id)}><Save />Save</Button><Button type="button" size="icon-sm" variant="ghost" aria-label={`Delete ${tag.name}`} disabled={tagPending === tag.id} onClick={() => removeTag(tag.id, tag.name)}><Trash2 /></Button></div></div>)}</div>
+      </CardContent></Card>
       <Card><CardHeader><CardTitle>Agent bootstrap</CardTitle><CardDescription>Retrieve program.md, exclusions, baseline, metric definitions, proposals, and recent evidence in one call.</CardDescription></CardHeader><CardContent><div className="flex items-center gap-2 rounded-lg border bg-muted/50 p-3"><code className="min-w-0 flex-1 truncate text-xs">{bootstrap}</code><Button type="button" size="icon-sm" variant="ghost" aria-label="Copy bootstrap call" onClick={() => { navigator.clipboard.writeText(bootstrap); toast.success("Copied") }}><Copy /></Button></div><FieldDescription className="mt-3">Registry endpoint: {data.project.registry_endpoint}</FieldDescription></CardContent></Card>
     </div>
   </form>
@@ -144,7 +212,7 @@ export function ProjectWorkspace({ slug, view }: { slug: string; view: ProjectVi
   const [progress, setProgress] = useState<ProgressData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedRun, setSelectedRun] = useState<string | null>(null)
-  const progressQuery = useRef({ metric: "", window: "30d", includeTags: [] as string[], excludeTags: [] as string[] })
+  const progressQuery = useRef({ metric: "", window: "all", includeTags: [] as string[], excludeTags: [] as string[] })
   const load = useCallback(async () => {
     const query = progressQuery.current
     try { const [dashboard, progressData] = await Promise.all([runtrace.dashboard(slug), runtrace.progress(slug, query.metric, query.window, query.includeTags, query.excludeTags)]); setData(dashboard); setProgress(progressData); setError(null) }
@@ -173,6 +241,6 @@ export function ProjectWorkspace({ slug, view }: { slug: string; view: ProjectVi
     {view === "search" ? <SearchView data={data} slug={slug} reload={load} openRun={setSelectedRun} /> : null}
     {view === "archive" ? <ArchiveView data={data} slug={slug} reload={load} openRun={setSelectedRun} /> : null}
     {view === "settings" ? <SettingsView key={data.project.updated_at + data.program.version} data={data} slug={slug} reload={load} /> : null}
-    <RunDetailSheet runId={selectedRun} onClose={() => setSelectedRun(null)} />
+    <RunDetailSheet runId={selectedRun} baselineId={data?.baseline?.id ?? null} metric={data?.project.progress_metric_key ?? "validation_loss"} onClose={() => setSelectedRun(null)} />
   </ProjectShell>
 }

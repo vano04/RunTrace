@@ -22,6 +22,7 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(BaseModel):
     description: str = Field(default="", max_length=2000)
+    repository_url: str | None = Field(default=None, max_length=500)
 
 
 class ProjectRead(ORMModel):
@@ -49,6 +50,17 @@ class ExperimentCreate(BaseModel):
     metric_mode: MetricMode = "curve"
     dependency_ids: list[str] = Field(default_factory=list)
     priority: int = 100
+
+
+class ExperimentUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    hypothesis: str | None = Field(default=None, min_length=1)
+    reasoning: str | None = None
+    implementation_details: str | None = None
+    configuration: dict[str, Any] | None = None
+    metric_mode: MetricMode | None = None
+    dependency_ids: list[str] | None = None
+    priority: int | None = None
 
 
 class ExperimentRead(ORMModel):
@@ -182,6 +194,10 @@ class ExclusionsUpdate(BaseModel):
 class ProgressSettingsUpdate(BaseModel):
     metric_name: str = Field(min_length=1, max_length=120)
     direction: Literal["lower_is_better", "higher_is_better"] = "lower_is_better"
+
+
+class TagWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
 
 
 class BaselineUpdate(BaseModel):

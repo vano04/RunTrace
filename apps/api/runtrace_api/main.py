@@ -32,6 +32,7 @@ from .models import (
     RunEvent,
     RunMetric,
     RunParameter,
+    TagDefinition,
     WorkerObservation,
     now_utc,
 )
@@ -43,6 +44,7 @@ from .schemas import (
     ExclusionsUpdate,
     ExperimentCreate,
     ExperimentRead,
+    ExperimentUpdate,
     MetricBatch,
     ParameterBatch,
     ProgressSettingsUpdate,
@@ -54,6 +56,7 @@ from .schemas import (
     RunFinish,
     RunRead,
     SearchRequest,
+    TagWrite,
 )
 from .seed import seed_demo
 
@@ -209,6 +212,10 @@ def autoresearch_runtime_seconds(run: Run) -> float | None:
     return values[-1] if values else None
 
 
+def tag_rule_names(run: Run) -> dict[str, str]:
+    return {item.rule_key: item.name for item in run.project.tag_definitions if item.rule_key}
+
+
 def run_tags(run: Run) -> list[str]:
     """Return explicit tags plus temporary autoresearch step-derived tags.
 
@@ -220,24 +227,67 @@ def run_tags(run: Run) -> list[str]:
         if parameter.name == "tags":
             tags.update(_normalise_tags(parameter.value))
     final_step = run_final_step(run)
+    rules = tag_rule_names(run)
+    early_tag = rules.get("autoresearch_early_stop")
+    long_tag = rules.get("autoresearch_long_run")
     if final_step is not None:
-        if final_step < AUTORESEARCH_COMPLETION_STEP:
-            tags.add("early stop")
-        elif final_step > AUTORESEARCH_COMPLETION_STEP:
-            tags.add("long run")
+        if final_step < AUTORESEARCH_COMPLETION_STEP and early_tag:
+            tags.add(early_tag)
+        elif final_step > AUTORESEARCH_COMPLETION_STEP and long_tag:
+            tags.add(long_tag)
     else:
         runtime = autoresearch_runtime_seconds(run)
-        if runtime is not None and runtime < AUTORESEARCH_EARLY_RUNTIME_SECONDS:
-            tags.add("early stop")
-        elif runtime is not None and runtime > AUTORESEARCH_LONG_RUNTIME_SECONDS:
-            tags.add("long run")
-    if (run.configuration or {}).get("source_file") == "results.tsv" and (run.configuration or {}).get("autoresearch_status") == "crash" and "long run" not in tags:
-        tags.add("early stop")
+        if runtime is not None and runtime < AUTORESEARCH_EARLY_RUNTIME_SECONDS and early_tag:
+            tags.add(early_tag)
+        elif runtime is not None and runtime > AUTORESEARCH_LONG_RUNTIME_SECONDS and long_tag:
+            tags.add(long_tag)
+    if (run.configuration or {}).get("source_file") == "results.tsv" and (run.configuration or {}).get("autoresearch_status") == "crash" and (not long_tag or long_tag not in tags) and early_tag:
+        tags.add(early_tag)
     return sorted(tags)
 
 
 def experiment_tags(experiment: Experiment) -> list[str]:
     return sorted(set(_normalise_tags((experiment.configuration or {}).get("tags"))))
+
+
+def tag_payload(tag: TagDefinition) -> dict:
+    return {"id": tag.id, "name": tag.name, "rule_key": tag.rule_key, "created_at": tag.created_at, "updated_at": tag.updated_at}
+
+
+def register_tags(session: Session, project: Project, names: list[str]) -> bool:
+    existing = {item.name for item in project.tag_definitions}
+    changed = False
+    for name in sorted(set(_normalise_tags(names)) - existing):
+        session.add(TagDefinition(project_id=project.id, name=name))
+        changed = True
+    if changed:
+        session.flush()
+        session.refresh(project, attribute_names=["tag_definitions"])
+    return changed
+
+
+def replace_explicit_tag(value: object, old: str, new: str | None) -> list[str]:
+    tags = _normalise_tags(value)
+    replaced = [new if tag == old else tag for tag in tags if tag != old or new]
+    return sorted(set(tag for tag in replaced if tag))
+
+
+def rewrite_explicit_tag(session: Session, project: Project, old: str, new: str | None) -> None:
+    experiments = session.scalars(select(Experiment).where(Experiment.project_id == project.id)).all()
+    for item in experiments:
+        configuration = dict(item.configuration or {})
+        if old in _normalise_tags(configuration.get("tags")):
+            configuration["tags"] = replace_explicit_tag(configuration.get("tags"), old, new)
+            item.configuration = configuration
+    runs = session.scalars(select(Run).options(selectinload(Run.parameters)).where(Run.project_id == project.id)).all()
+    for item in runs:
+        configuration = dict(item.configuration or {})
+        if old in _normalise_tags(configuration.get("tags")):
+            configuration["tags"] = replace_explicit_tag(configuration.get("tags"), old, new)
+            item.configuration = configuration
+        for parameter in item.parameters:
+            if parameter.name == "tags" and old in _normalise_tags(parameter.value):
+                parameter.value = replace_explicit_tag(parameter.value, old, new)
 
 
 def matches_tag_filters(tags: list[str], include_tags: list[str], exclude_tags: list[str]) -> bool:
@@ -272,6 +322,10 @@ def create_project(body: ProjectCreate, session: Session = Depends(get_db)) -> P
     project = Project(**body.model_dump())
     session.add(project)
     session.flush()
+    session.add_all([
+        TagDefinition(project_id=project.id, name="early stop", rule_key="autoresearch_early_stop"),
+        TagDefinition(project_id=project.id, name="long run", rule_key="autoresearch_long_run"),
+    ])
     session.add(ProgramVersion(project_id=project.id, version=1, content=f"# {project.name}\n", actor="human"))
     session.add(ExclusionVersion(project_id=project.id, version=1, rules=[], actor="human"))
     session.commit()
@@ -300,7 +354,12 @@ def read_project(project: str, session: Session = Depends(get_db)) -> Project:
 def update_project(project: str, body: ProjectUpdate, session: Session = Depends(get_db)) -> Project:
     current = get_project(session, project)
     current.description = body.description.strip()
-    audit(session, current.id, "project.updated", "project", current.id, "human", None, {"description": current.description})
+    if "repository_url" in body.model_fields_set:
+        current.repository_url = body.repository_url.strip() if body.repository_url and body.repository_url.strip() else None
+    audit(session, current.id, "project.updated", "project", current.id, "human", None, {
+        "description": current.description,
+        "repository_url": current.repository_url,
+    })
     session.commit()
     session.refresh(current)
     return current
@@ -334,6 +393,65 @@ def update_project_settings(project: str, body: ProgressSettingsUpdate, session:
     return {"metric_name": metric_name, "direction": body.direction, "available_metrics": available_metric_names(session, current.id)}
 
 
+@app.get("/api/v1/projects/{project}/tags")
+def list_tags(project: str, session: Session = Depends(get_db)) -> list[dict]:
+    current = get_project(session, project)
+    experiments = session.scalars(select(Experiment).where(Experiment.project_id == current.id)).all()
+    runs = session.scalars(select(Run).options(selectinload(Run.parameters)).where(Run.project_id == current.id)).all()
+    observed = [tag for item in experiments for tag in experiment_tags(item)] + [tag for item in runs for tag in _normalise_tags((item.configuration or {}).get("tags"))]
+    observed += [tag for item in runs for parameter in item.parameters if parameter.name == "tags" for tag in _normalise_tags(parameter.value)]
+    if register_tags(session, current, observed):
+        session.commit()
+    return [tag_payload(item) for item in sorted(current.tag_definitions, key=lambda item: item.name)]
+
+
+@app.post("/api/v1/projects/{project}/tags", status_code=201)
+def create_tag(project: str, body: TagWrite, session: Session = Depends(get_db)) -> dict:
+    current = get_project(session, project)
+    name = body.name.strip().lower()
+    if session.scalar(select(TagDefinition.id).where(TagDefinition.project_id == current.id, TagDefinition.name == name)):
+        raise HTTPException(409, "Tag already exists")
+    item = TagDefinition(project_id=current.id, name=name)
+    session.add(item)
+    session.flush()
+    audit(session, current.id, "tag.created", "tag", item.id, "human", None, {"name": name})
+    session.commit()
+    session.refresh(item)
+    return tag_payload(item)
+
+
+@app.patch("/api/v1/projects/{project}/tags/{tag_id}")
+def update_tag(project: str, tag_id: str, body: TagWrite, session: Session = Depends(get_db)) -> dict:
+    current = get_project(session, project)
+    item = session.scalar(select(TagDefinition).where(TagDefinition.project_id == current.id, TagDefinition.id == tag_id))
+    if not item:
+        raise HTTPException(404, "Tag not found")
+    name = body.name.strip().lower()
+    duplicate = session.scalar(select(TagDefinition.id).where(TagDefinition.project_id == current.id, TagDefinition.name == name, TagDefinition.id != item.id))
+    if duplicate:
+        raise HTTPException(409, "Tag already exists")
+    old = item.name
+    if old != name:
+        rewrite_explicit_tag(session, current, old, name)
+        item.name = name
+        audit(session, current.id, "tag.updated", "tag", item.id, "human", None, {"old_name": old, "name": name})
+    session.commit()
+    session.refresh(item)
+    return tag_payload(item)
+
+
+@app.delete("/api/v1/projects/{project}/tags/{tag_id}", status_code=204)
+def delete_tag(project: str, tag_id: str, session: Session = Depends(get_db)) -> None:
+    current = get_project(session, project)
+    item = session.scalar(select(TagDefinition).where(TagDefinition.project_id == current.id, TagDefinition.id == tag_id))
+    if not item:
+        raise HTTPException(404, "Tag not found")
+    rewrite_explicit_tag(session, current, item.name, None)
+    audit(session, current.id, "tag.deleted", "tag", item.id, "human", None, {"name": item.name, "rule_key": item.rule_key})
+    session.delete(item)
+    session.commit()
+
+
 @app.get("/api/v1/projects/{project}/experiments", response_model=list[ExperimentRead])
 def list_experiments(
     project: str,
@@ -356,8 +474,40 @@ def create_experiment(project: str, body: ExperimentCreate, x_request_id: str | 
     item = Experiment(project_id=current.id, display_id=next_display_id(session, current.id, Experiment, "EXP"), **body.model_dump())
     session.add(item)
     session.flush()
+    register_tags(session, current, _normalise_tags(body.configuration.get("tags")))
     index_document(session, item)
     audit(session, current.id, "experiment.proposed", "experiment", item.id, body.source_model or body.source, x_request_id, {"display_id": item.display_id})
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+@app.get("/api/v1/projects/{project}/experiments/{identifier}", response_model=ExperimentRead)
+def read_experiment(project: str, identifier: str, session: Session = Depends(get_db)) -> Experiment:
+    return get_experiment(session, get_project(session, project), identifier)
+
+
+@app.patch("/api/v1/projects/{project}/experiments/{identifier}", response_model=ExperimentRead)
+def update_experiment(
+    project: str,
+    identifier: str,
+    body: ExperimentUpdate,
+    x_actor: str = Header("human"),
+    x_request_id: str | None = Header(None),
+    session: Session = Depends(get_db),
+) -> Experiment:
+    current = get_project(session, project)
+    item = get_experiment(session, current, identifier)
+    changes = {key: value for key, value in body.model_dump(exclude_unset=True).items() if value is not None}
+    if not changes:
+        return item
+    for key, value in changes.items():
+        setattr(item, key, value)
+    item.updated_at = now_utc()
+    if "configuration" in changes:
+        register_tags(session, current, _normalise_tags(item.configuration.get("tags")))
+    index_document(session, item)
+    audit(session, current.id, "experiment.updated", "experiment", item.id, x_actor, x_request_id, {"fields": sorted(changes)})
     session.commit()
     session.refresh(item)
     return item
@@ -487,6 +637,7 @@ def create_run(project: str, body: RunCreate, x_actor: str = Header("agent"), x_
         item.experiment_id = experiment.id
     session.add(item)
     session.flush()
+    register_tags(session, current, _normalise_tags(body.configuration.get("tags")))
     index_document(session, item)
     audit(session, current.id, "run.started", "run", item.id, x_actor, x_request_id, {"display_id": item.display_id})
     session.commit()
@@ -568,6 +719,8 @@ def log_parameters(identifier: str, body: ParameterBatch, session: Session = Dep
             existing.value = value
         else:
             session.add(RunParameter(run_id=run.id, name=name, value=value))
+    if "tags" in body.parameters:
+        register_tags(session, run.project, _normalise_tags(body.parameters["tags"]))
     session.commit()
     return {"accepted": len(body.parameters)}
 
@@ -704,7 +857,7 @@ def search_records(session: Session, body: SearchRequest) -> list[dict]:
             continue
         keyword_score = sum(haystack.count(term) for term in terms) if keyword_match and terms else 0
         score = keyword_score + semantic_score * 10 if terms else 1
-        records.append({"kind": "experiment", "id": item.id, "display_id": item.display_id, "title": item.title, "lifecycle": item.lifecycle, "disposition": item.disposition, "hypothesis": item.hypothesis, "reasoning": item.reasoning, "conclusion": "", "result_summary": "", "archived": bool(item.archived_at), "tags": tags, "score": round(score, 4), "semantic_score": round(semantic_score, 4), "match_type": "hybrid" if semantic_score and keyword_score else "semantic" if semantic_score else "keyword"})
+        records.append({"kind": "experiment", "id": item.id, "display_id": item.display_id, "title": item.title, "lifecycle": item.lifecycle, "disposition": item.disposition, "hypothesis": item.hypothesis, "reasoning": item.reasoning, "conclusion": "", "result_summary": "", "archived": bool(item.archived_at), "tags": tags, "score": round(score, 4), "semantic_score": round(semantic_score, 4), "match_type": "hybrid" if semantic_score and keyword_score else "semantic" if semantic_score else "keyword", "timestamp": item.created_at, "metric_value": None})
     for item in runs:
         if item.archived_at and not body.include_archived:
             continue
@@ -722,14 +875,16 @@ def search_records(session: Session, body: SearchRequest) -> list[dict]:
             continue
         keyword_score = sum(haystack.count(term) for term in terms) if keyword_match and terms else 0
         score = keyword_score + semantic_score * 10 if terms else 1
-        records.append({"kind": "run", "id": item.id, "display_id": item.display_id, "title": item.name, "lifecycle": item.lifecycle, "disposition": item.disposition, "hypothesis": item.hypothesis, "reasoning": item.reasoning, "conclusion": item.conclusion, "result_summary": item.result_summary, "decision_changed": item.decision_changed, "evidence_used": item.evidence_used, "archived": bool(item.archived_at), "tags": tags, "score": round(score, 4), "semantic_score": round(semantic_score, 4), "match_type": "hybrid" if semantic_score and keyword_score else "semantic" if semantic_score else "keyword", "finished_at": item.finished_at})
+        metric_points = [point for point in item.metrics if point.name == project.progress_metric_key]
+        latest_metric = max(metric_points, key=lambda point: (point.step or 0, point.timestamp)) if metric_points else None
+        records.append({"kind": "run", "id": item.id, "display_id": item.display_id, "title": item.name, "lifecycle": item.lifecycle, "disposition": item.disposition, "hypothesis": item.hypothesis, "reasoning": item.reasoning, "conclusion": item.conclusion, "result_summary": item.result_summary, "decision_changed": item.decision_changed, "evidence_used": item.evidence_used, "archived": bool(item.archived_at), "tags": tags, "score": round(score, 4), "semantic_score": round(semantic_score, 4), "match_type": "hybrid" if semantic_score and keyword_score else "semantic" if semantic_score else "keyword", "finished_at": item.finished_at, "timestamp": item.finished_at or item.started_at, "metric_value": latest_metric.value if latest_metric else None})
     def sort_timestamp(record: dict) -> float:
-        finished_at = record.get("finished_at")
-        if not finished_at:
+        timestamp = record.get("timestamp")
+        if not timestamp:
             return 0.0
-        if finished_at.tzinfo is None:
-            finished_at = finished_at.replace(tzinfo=timezone.utc)
-        return finished_at.timestamp()
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        return timestamp.timestamp()
 
     records.sort(key=lambda record: (record["score"], sort_timestamp(record)), reverse=True)
     return records[: body.limit]
@@ -770,16 +925,18 @@ def project_context(project: str, session: Session = Depends(get_db)) -> dict:
 
 
 @app.get("/api/v1/projects/{project}/progress")
-def progress(project: str, metric: str | None = None, window: str = "30d", include_tag: list[str] = Query(default=[]), exclude_tag: list[str] = Query(default=[]), session: Session = Depends(get_db)) -> dict:
+def progress(project: str, metric: str | None = None, window: str = "all", include_tag: list[str] = Query(default=[]), exclude_tag: list[str] = Query(default=[]), session: Session = Depends(get_db)) -> dict:
     current = get_project(session, project)
     metric = metric or current.progress_metric_key
     definition = session.scalar(select(MetricDefinition).where(MetricDefinition.project_id == current.id, MetricDefinition.key == metric))
     direction = current.progress_metric_direction if metric == current.progress_metric_key else (definition.direction if definition else "lower_is_better")
+    range_end = now_utc()
     cutoff = None
-    if window == "7d":
-        cutoff = now_utc() - timedelta(days=7)
-    elif window == "30d":
-        cutoff = now_utc() - timedelta(days=30)
+    if window != "all":
+        window_match = re.fullmatch(r"(\d+)d", window)
+        if not window_match or not 1 <= int(window_match.group(1)) <= 3650:
+            raise HTTPException(422, "Window must be 'all' or a day range such as '7d' or '30d'")
+        cutoff = range_end - timedelta(days=int(window_match.group(1)))
     runs = session.scalars(select(Run).options(selectinload(Run.metrics), selectinload(Run.parameters)).where(Run.project_id == current.id, Run.lifecycle == "completed", Run.archived_at.is_(None), Run.deleted_at.is_(None)).order_by(Run.finished_at)).all()
     values = []
     for run in runs:
@@ -813,7 +970,7 @@ def progress(project: str, metric: str | None = None, window: str = "30d", inclu
         else:
             improvement = (baseline - value) / abs(baseline) * 100
             best_improvement = (baseline - best) / abs(baseline) * 100
-        series.append({"run_id": run.id, "display_id": run.display_id, "name": run.name, "timestamp": run.finished_at, "raw_value": value, "best_value": best, "is_improvement": is_improvement, "improvement": round(improvement, 4), "best_improvement": round(best_improvement, 4), "baseline_value": baseline, "final_step": run_final_step(run), "tags": tags})
+        series.append({"run_id": run.id, "display_id": run.display_id, "name": run.name, "timestamp": run.finished_at, "timestamp_is_inferred": (run.configuration or {}).get("source_file") == "results.tsv", "raw_value": value, "best_value": best, "is_improvement": is_improvement, "improvement": round(improvement, 4), "best_improvement": round(best_improvement, 4), "baseline_value": baseline, "final_step": run_final_step(run), "tags": tags})
     return {"metric": metric, "label": definition.label if definition else metric, "unit": definition.unit if definition else None, "window": window, "direction": direction, "baseline": baseline, "best": best, "series": series}
 
 
@@ -835,7 +992,9 @@ def dashboard(project: str, session: Session = Depends(get_db)) -> dict:
     counts.update(item.disposition for item in history)
     counts["crashed"] = len([item for item in history if item.lifecycle == "crashed"])
     workers = session.scalar(select(func.count()).select_from(WorkerObservation).where(WorkerObservation.project_id == current.id)) or 0
-    all_tags = sorted({tag for item in experiments for tag in experiment_tags(item)} | {tag for item in runs for tag in run_tags(item)})
+    register_tags(session, current, [tag for item in experiments for tag in experiment_tags(item)] + [tag for item in runs for tag in _normalise_tags((item.configuration or {}).get("tags"))])
+    session.commit()
+    all_tags = sorted({item.name for item in current.tag_definitions})
     return {
         "project": ProjectRead.model_validate(current).model_dump(),
         "experiments": [ExperimentRead.model_validate(item).model_dump() for item in active_experiments],
@@ -849,6 +1008,7 @@ def dashboard(project: str, session: Session = Depends(get_db)) -> dict:
         "worker_count": workers,
         "available_metrics": available_metric_names(session, current.id),
         "available_tags": all_tags,
+        "tag_definitions": [tag_payload(item) for item in sorted(current.tag_definitions, key=lambda item: item.name)],
     }
 
 

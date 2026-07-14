@@ -1,4 +1,4 @@
-import type { Dashboard, ProgressData, Project, Run, SearchResult } from "@/lib/types"
+import type { Dashboard, Experiment, ProgressData, Project, Run, SearchResult, TagDefinition } from "@/lib/types"
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -30,7 +30,7 @@ export const runtrace = {
   createProject: (body: { name: string; slug: string; description: string; repository_url?: string }) =>
     api<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify(body) }),
   dashboard: (slug: string) => api<Dashboard>(`/api/v1/projects/${slug}/dashboard`),
-  progress: (slug: string, metric = "", window = "30d", includeTags: string[] = [], excludeTags: string[] = []) => {
+  progress: (slug: string, metric = "", window = "all", includeTags: string[] = [], excludeTags: string[] = []) => {
     const params = new URLSearchParams({ window })
     if (metric) params.set("metric", metric)
     includeTags.forEach((tag) => params.append("include_tag", tag))
@@ -39,6 +39,9 @@ export const runtrace = {
   },
   createExperiment: (slug: string, body: Record<string, unknown>) =>
     api(`/api/v1/projects/${slug}/experiments`, { method: "POST", body: JSON.stringify(body) }),
+  experiment: (slug: string, id: string) => api<Experiment>(`/api/v1/projects/${slug}/experiments/${id}`),
+  updateExperiment: (slug: string, id: string, body: Record<string, unknown>) =>
+    api<Experiment>(`/api/v1/projects/${slug}/experiments/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   archiveExperiment: (slug: string, id: string) => api(`/api/v1/projects/${slug}/experiments/${id}/archive`, { method: "POST" }),
   restoreExperiment: (slug: string, id: string) => api(`/api/v1/projects/${slug}/experiments/${id}/restore`, { method: "POST" }),
   deleteExperiment: (slug: string, id: string) => api(`/api/v1/projects/${slug}/experiments/${id}`, { method: "DELETE" }),
@@ -60,8 +63,15 @@ export const runtrace = {
     return api(`/api/v1/runs/${id}/artifacts`, { method: "POST", body })
   },
   previewArtifact: (id: string) => api<{ id: string; name: string; content_type: string; content: string; truncated: boolean }>(`/api/v1/artifacts/${id}/preview`),
-  updateProject: (slug: string, description: string) => api(`/api/v1/projects/${slug}`, { method: "PATCH", body: JSON.stringify({ description }) }),
+  updateProject: (slug: string, description: string, repositoryUrl?: string) => api(`/api/v1/projects/${slug}`, {
+    method: "PATCH",
+    body: JSON.stringify({ description, ...(repositoryUrl !== undefined ? { repository_url: repositoryUrl.trim() || null } : {}) }),
+  }),
   updateProgram: (slug: string, content: string) => api(`/api/v1/projects/${slug}/program`, { method: "PUT", body: JSON.stringify({ content }) }),
   updateExclusions: (slug: string, rules: string[]) => api(`/api/v1/projects/${slug}/exclusions`, { method: "PUT", body: JSON.stringify({ rules }) }),
   updateSettings: (slug: string, metric_name: string, direction: string) => api(`/api/v1/projects/${slug}/settings`, { method: "PUT", body: JSON.stringify({ metric_name, direction }) }),
+  tags: (slug: string) => api<TagDefinition[]>(`/api/v1/projects/${slug}/tags`),
+  createTag: (slug: string, name: string) => api<TagDefinition>(`/api/v1/projects/${slug}/tags`, { method: "POST", body: JSON.stringify({ name }) }),
+  updateTag: (slug: string, id: string, name: string) => api<TagDefinition>(`/api/v1/projects/${slug}/tags/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  deleteTag: (slug: string, id: string) => api<void>(`/api/v1/projects/${slug}/tags/${id}`, { method: "DELETE" }),
 }

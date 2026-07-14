@@ -35,7 +35,7 @@ const snippets = [
 
 export default function DocsPage() {
   return <main className="mx-auto min-h-screen w-full max-w-6xl px-5 sm:px-8">
-    <header className="flex h-20 items-center justify-between border-b"><RunTraceLogo /><Button variant="ghost" render={<Link href="/" />}><ArrowLeft data-icon="inline-start" />Projects</Button></header>
+    <header className="flex h-20 items-center justify-between border-b"><RunTraceLogo /><Button variant="ghost" render={<Link href="/" />} nativeButton={false}><ArrowLeft data-icon="inline-start" />Projects</Button></header>
     <section className="py-12 sm:py-16">
       <div className="mb-10 max-w-3xl"><Badge variant="secondary"><BookOpen />Workspace docs</Badge><h1 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl">Connect people and agents to the same experiment memory.</h1><p className="mt-4 text-base leading-7 text-muted-foreground">RunTrace exposes the same project-scoped registry through its dashboard, HTTP API, Python SDK, CLI, and MCP server.</p></div>
       <div className="grid gap-5 md:grid-cols-2">{snippets.map(({ title, description, icon: Icon, code }) => <Card key={title}><CardHeader><CardTitle className="flex items-center gap-2"><Icon className="size-4 text-primary" />{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent><pre className="overflow-x-auto rounded-lg border bg-muted/50 p-4 font-mono text-xs leading-6">{code}</pre></CardContent></Card>)}</div>

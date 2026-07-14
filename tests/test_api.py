@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 
 def test_project_context_is_scoped_and_complete(fresh_database):
@@ -44,6 +45,24 @@ def test_archive_excludes_active_search_and_context_then_restore(fresh_database)
     restored = fresh_database.post("/api/v1/projects/dense-optimizer/experiments/EXP-023/restore")
     assert restored.status_code == 200
     assert restored.json()["archived_at"] is None
+
+
+def test_experiment_can_be_read_and_updated_in_place(fresh_database):
+    original = fresh_database.get("/api/v1/projects/dense-optimizer/experiments/EXP-023")
+    assert original.status_code == 200
+    updated = fresh_database.patch(
+        "/api/v1/projects/dense-optimizer/experiments/EXP-023",
+        json={
+            "title": "Cache normalized rows v2",
+            "hypothesis": "Speed up row normalization with cache reuse",
+            "reasoning": "Keep the cache bounded after the first pass.",
+            "metric_mode": "curve",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["display_id"] == "EXP-023"
+    assert updated.json()["title"] == "Cache normalized rows v2"
+    assert fresh_database.get("/api/v1/projects/dense-optimizer/experiments/EXP-023").json()["reasoning"] == "Keep the cache bounded after the first pass."
 
 
 def test_closed_loop_run_is_retrievable_as_new_evidence(fresh_database):
@@ -115,6 +134,17 @@ def test_progress_normalizes_comparable_completed_runs(fresh_database):
     assert [point["is_improvement"] for point in payload["series"]] == [True, True, False, False]
     assert [point["best_value"] for point in payload["series"]] == [3.28, 3.27, 3.27, 3.27]
     assert all("improvement" in point and "raw_value" in point for point in payload["series"])
+
+
+def test_search_browse_results_include_sort_metadata(fresh_database):
+    response = fresh_database.get("/api/v1/projects/dense-optimizer/search?limit=50")
+    assert response.status_code == 200
+    results = response.json()["results"]
+    timestamps = [datetime.fromisoformat(item["timestamp"]) for item in results]
+    assert timestamps == sorted(timestamps, reverse=True)
+    run = next(item for item in results if item["display_id"] == "RUN-168")
+    assert run["metric_value"] == 3.28
+    assert all("timestamp" in item and "metric_value" in item for item in results)
 
 
 def test_progress_metric_uses_exact_reported_name_from_project_settings(fresh_database):

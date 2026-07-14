@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AppearanceProvider } from "@/components/appearance-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
@@ -17,8 +18,13 @@ export default function RootLayout({
     <html
       lang="en"
       className="h-full antialiased"
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col"><TooltipProvider>{children}<Toaster richColors /></TooltipProvider></body>
+      <body className="min-h-full flex flex-col">
+        <AppearanceProvider>
+          <TooltipProvider>{children}<Toaster richColors /></TooltipProvider>
+        </AppearanceProvider>
+      </body>
     </html>
   );
 }
