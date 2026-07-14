@@ -38,6 +38,14 @@ docker compose up --build
 
 Open <http://localhost:3000>. On a fresh database, the first browser creates the instance owner and a password. Data is stored in named PostgreSQL and artifact volumes and survives `docker compose down`.
 
+To update an existing checkout, fast-forward it to the latest revision and rebuild the running Compose services:
+
+```bash
+./scripts/update.sh
+```
+
+The update preserves the named database, artifact, and model volumes. It stops if Git cannot fast-forward or if Docker is unavailable.
+
 To deploy the published GitHub Container packages instead of building locally:
 
 ```bash
