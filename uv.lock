@@ -1879,8 +1879,8 @@ wheels = [
 ]
 
 [[package]]
-name = "runtrace"
-version = "0.1.1"
+name = "runtrace-ai"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

@@ -1,6 +1,6 @@
 {
   "name": "runtrace",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Persistent experiment memory and run tracking for autonomous research agents.",
   "author": {
     "name": "RunTrace contributors"
@@ -12,7 +12,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@v0.1.1",
+        "runtrace-ai[mcp]==0.1.2",
         "runtrace-mcp"
       ],
       "env": {

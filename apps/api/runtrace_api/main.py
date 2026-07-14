@@ -83,7 +83,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="RunTrace API",
-    version="0.1.1",
+    version="0.1.2",
     description="Project-scoped experiment memory and supervision for autonomous research agents.",
     lifespan=lifespan,
 )

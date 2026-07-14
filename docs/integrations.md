@@ -25,17 +25,17 @@ The token is displayed once by RunTrace and stored by the server only as a SHA-2
 
 ## Standalone CLI
 
-Install the lightweight CLI from GitHub without cloning the repository:
+Install the lightweight CLI from PyPI without cloning the repository:
 
 ```bash
-uv tool install 'runtrace @ git+https://github.com/vano04/RunTrace.git@v0.1.1'
+uv tool install runtrace-ai
 runtrace --help
 ```
 
 For an isolated one-off invocation:
 
 ```bash
-uvx --from 'runtrace @ git+https://github.com/vano04/RunTrace.git@v0.1.1' \
+uvx --from runtrace-ai \
   runtrace search PROJECT "prior evidence"
 ```
 
@@ -44,7 +44,7 @@ Tagged releases attach a wheel and source distribution to GitHub Releases. A man
 ## Python package
 
 ```bash
-python -m pip install 'runtrace @ git+https://github.com/vano04/RunTrace.git@v0.1.1'
+python -m pip install runtrace-ai
 ```
 
 ```python
@@ -85,7 +85,7 @@ Or run `runtrace integrations install claude`, then run `runtrace auth`.
 Any stdio MCP host can run:
 
 ```bash
-uvx --from 'runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@v0.1.1' runtrace-mcp
+uvx --from 'runtrace-ai[mcp]==0.1.2' runtrace-mcp
 ```
 
 The host needs `uv` plus either credentials saved by `runtrace auth` or the `RUNTRACE_BASE_URL` and `RUNTRACE_API_TOKEN` environment variables. Its first launch needs network access to GitHub and the Python package index.
