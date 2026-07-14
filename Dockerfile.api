@@ -5,7 +5,7 @@ COPY alembic.ini ./
 COPY apps/api ./apps/api
 COPY apps/mcp ./apps/mcp
 COPY packages ./packages
-RUN pip wheel --no-cache-dir --wheel-dir /wheels .
+RUN pip wheel --no-cache-dir --wheel-dir /wheels '.[server,mcp,embeddings]'
 
 FROM python:3.13-slim AS runtime
 WORKDIR /app

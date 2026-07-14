@@ -35,7 +35,9 @@ RUNTRACE_SETUP_LINK_TTL_HOURS=24
 
 Changing the RP ID or public origin makes existing passkeys unusable. Production deployments should use HTTPS and a stable hostname.
 
-Normal mode currently authenticates browser requests with the session cookie created by a passkey ceremony. The Python SDK, CLI, and MCP server do not yet implement a non-interactive credential flow, so authenticated remote agent access is not supported in this release. Do not enable development mode or bypass API authentication to work around that limitation on a public instance.
+Normal mode authenticates browser requests with the passkey session cookie and headless clients with bearer tokens. Any signed-in identity can create tokens under **Access → Your agent tokens**. A token is displayed only once; RunTrace stores its SHA-256 digest, visible prefix, name, timestamps, and optional expiry. Revocation is immediate. Suspending an identity revokes all of its sessions and tokens.
+
+Clients should send `Authorization: Bearer <token>` and normally read the secret from `RUNTRACE_API_TOKEN`. Do not put tokens in source code, plugin manifests, URLs, logs, or RunTrace records. Use a separate named token for each host so it can be revoked without interrupting other agents.
 
 ## Development split
 

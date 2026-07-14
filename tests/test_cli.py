@@ -40,7 +40,7 @@ class FakeClient:
 
 def test_cli_search_and_context_commands(monkeypatch):
     fake = FakeClient()
-    monkeypatch.setattr(cli, "client", lambda _base_url: fake)
+    monkeypatch.setattr(cli, "client", lambda _base_url, _api_token: fake)
     search = runner.invoke(cli.app, ["search", "dense-optimizer", "spectral", "--limit", "3"])
     context = runner.invoke(cli.app, ["context", "dense-optimizer"])
     assert search.exit_code == 0
@@ -51,7 +51,7 @@ def test_cli_search_and_context_commands(monkeypatch):
 
 def test_cli_exec_parses_metric_and_event_output(monkeypatch):
     fake = FakeClient()
-    monkeypatch.setattr(cli, "client", lambda _base_url: fake)
+    monkeypatch.setattr(cli, "client", lambda _base_url, _api_token: fake)
 
     class Process:
         stdout = iter(["RUNTRACE_METRIC loss=3.2 step=10\n", 'RUNTRACE_EVENT level=warning message="Guardrail near"\n'])
@@ -67,7 +67,7 @@ def test_cli_exec_parses_metric_and_event_output(monkeypatch):
 
 def test_cli_exec_propagates_process_failure(monkeypatch):
     fake = FakeClient()
-    monkeypatch.setattr(cli, "client", lambda _base_url: fake)
+    monkeypatch.setattr(cli, "client", lambda _base_url, _api_token: fake)
 
     class Process:
         stdout = iter([])
@@ -77,3 +77,18 @@ def test_cli_exec_propagates_process_failure(monkeypatch):
     result = runner.invoke(cli.app, ["exec", "--project", "dense-optimizer", "--name", "CLI run", "--hypothesis", "Faster", "--", "false"])
     assert result.exit_code == 7
     assert fake.tracked.aborted == "Command exited 7"
+
+
+def test_cli_integration_installer_supports_codex_and_claude(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli.shutil, "which", lambda host: f"/usr/bin/{host}")
+    monkeypatch.setattr(cli.subprocess, "run", lambda command, check: calls.append((command, check)))
+
+    codex = runner.invoke(cli.app, ["integrations", "install", "codex"])
+    claude = runner.invoke(cli.app, ["integrations", "install", "claude"])
+
+    assert codex.exit_code == 0
+    assert claude.exit_code == 0
+    assert calls[0][0][:4] == ["codex", "plugin", "marketplace", "add"]
+    assert calls[1][0] == ["codex", "plugin", "add", "runtrace@runtrace"]
+    assert calls[3][0][:4] == ["claude", "plugin", "install", "runtrace@runtrace"]

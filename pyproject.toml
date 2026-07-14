@@ -4,24 +4,37 @@ version = "0.1.0"
 description = "Persistent experiment memory for autonomous research agents"
 readme = "README.md"
 requires-python = ">=3.11"
+keywords = ["agents", "experiments", "mcp", "research", "tracking"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Framework :: FastAPI",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering",
+]
 dependencies = [
-  "alembic>=1.16,<2",
-  "fastapi>=0.116,<1",
-  "fastembed>=0.7,<1",
   "httpx>=0.28,<1",
-  "mcp>=1.12,<2",
   "psutil>=7,<8",
-  "psycopg[binary]>=3.2,<4",
-  "pgvector>=0.4,<1",
-  "pydantic-settings>=2.10,<3",
-  "python-multipart>=0.0.20,<1",
-  "sqlalchemy>=2.0,<3",
   "typer>=0.16,<1",
-  "uvicorn[standard]>=0.35,<1",
-  "webauthn>=3,<4",
 ]
 
 [project.optional-dependencies]
+mcp = ["mcp>=1.12,<2"]
+server = [
+  "alembic>=1.16,<2",
+  "fastapi>=0.116,<1",
+  "pgvector>=0.4,<1",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic-settings>=2.10,<3",
+  "python-multipart>=0.0.20,<1",
+  "sqlalchemy>=2.0,<3",
+  "uvicorn[standard]>=0.35,<1",
+  "webauthn>=3,<4",
+]
+embeddings = ["fastembed>=0.7,<1"]
 dev = [
   "pytest>=8.4,<9",
   "pytest-cov>=6.2,<7",
@@ -30,6 +43,12 @@ dev = [
 [project.scripts]
 runtrace = "runtrace.cli:app"
 runtrace-mcp = "runtrace_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/vano04/RunTrace"
+Documentation = "https://github.com/vano04/RunTrace#readme"
+Issues = "https://github.com/vano04/RunTrace/issues"
+Repository = "https://github.com/vano04/RunTrace.git"
 
 [build-system]
 requires = ["hatchling"]

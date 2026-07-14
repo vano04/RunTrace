@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowLeft, BookOpen, Braces, CircleDot, Code2, Database, GitBranch, Radio, Search, Terminal } from "lucide-react"
+import { ArrowLeft, BookOpen, Braces, CircleDot, Code2, Database, GitBranch, Plug, Radio, Search, Terminal } from "lucide-react"
 
 import { RunTraceLogo } from "@/components/runtrace-logo"
 import { Badge } from "@/components/ui/badge"
@@ -11,6 +11,7 @@ const sections = [
   { id: "python", label: "Python SDK" },
   { id: "cli", label: "CLI" },
   { id: "mcp", label: "MCP" },
+  { id: "plugins", label: "Codex & Claude" },
   { id: "http", label: "HTTP & SSE" },
   { id: "lifecycle", label: "Lifecycle" },
 ]
@@ -38,8 +39,9 @@ export default function DocsPage() {
 # Seeded development preview
 RUNTRACE_DEV=true docker compose up --build`}</Code>
           <p>For native Python development, install the workspace package and point clients at the API:</p>
-          <Code>{`uv sync --extra dev
-export RUNTRACE_BASE_URL=http://localhost:8000`}</Code>
+          <Code>{`uv sync --all-extras
+export RUNTRACE_BASE_URL=http://localhost:8000
+export RUNTRACE_API_TOKEN=rt_...`}</Code>
         </DocSection>
 
         <DocSection id="concepts" title="Core concepts" icon={Database}>
@@ -53,9 +55,10 @@ export RUNTRACE_BASE_URL=http://localhost:8000`}</Code>
 
         <DocSection id="python" title="Python SDK" icon={Code2}>
           <p>The context manager captures the current Git branch, commit, command, host metadata, and completion or crash state. Metrics are buffered briefly if the API is unavailable.</p>
-          <Code>{`from runtrace import configure, run
+          <Code>{`import os
+from runtrace import configure, run
 
-configure("http://localhost:8000", strict=True)
+configure("http://localhost:8000", api_token=os.environ["RUNTRACE_API_TOKEN"], strict=True)
 
 with run(
     project="dense-optimizer",
@@ -86,7 +89,7 @@ RUNTRACE_EVENT level=info message="checkpoint saved"`}</Code>
 
         <DocSection id="mcp" title="MCP server" icon={Braces}>
           <p>Run the stdio server to let coding agents retrieve context, propose and claim work, log live evidence, and finish runs without custom integration code.</p>
-          <Code>{`RUNTRACE_BASE_URL=http://localhost:8000 runtrace-mcp
+          <Code>{`uvx --from 'runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@master' runtrace-mcp
 
 # Typical agent sequence
 get_project_context({ project: "dense-optimizer" })
@@ -97,11 +100,29 @@ log_metric({ run_id: "run_...", name: "validation_loss", value: 3.24, step: 1000
 finish_run({ run_id: "run_...", disposition: "kept", result_summary: "...", conclusion: "..." })`}</Code>
         </DocSection>
 
+        <DocSection id="plugins" title="Codex and Claude Code" icon={Plug}>
+          <p>Install the repository marketplace from either CLI. The plugin bundles the RunTrace skill and starts the authenticated MCP server with <code className="rounded bg-muted px-1.5 py-0.5">uvx</code>.</p>
+          <Code>{`# Codex app and CLI
+codex plugin marketplace add vano04/RunTrace --ref master
+codex plugin add runtrace@runtrace
+
+# Claude Code
+claude plugin marketplace add vano04/RunTrace
+claude plugin install runtrace@runtrace --scope user
+
+# If the RunTrace CLI is already installed
+runtrace integrations install codex
+runtrace integrations install claude`}</Code>
+          <p>Create a token under <strong className="text-foreground">Access → Your agent tokens</strong>, then export <code className="rounded bg-muted px-1.5 py-0.5">RUNTRACE_BASE_URL</code> and <code className="rounded bg-muted px-1.5 py-0.5">RUNTRACE_API_TOKEN</code> before starting the agent host.</p>
+        </DocSection>
+
         <DocSection id="http" title="HTTP API and live streams" icon={Radio}>
           <p>All API routes are under <code className="rounded bg-muted px-1.5 py-0.5">/api/v1</code>. Mutating requests accept <code className="rounded bg-muted px-1.5 py-0.5">X-Request-ID</code> for idempotency where applicable. Run streams use Server-Sent Events.</p>
-          <Code>{`curl http://localhost:8000/api/v1/projects/dense-optimizer/context
+          <Code>{`curl -H "Authorization: Bearer $RUNTRACE_API_TOKEN" \
+  http://localhost:8000/api/v1/projects/dense-optimizer/context
 
-curl -N http://localhost:8000/api/v1/runs/RUN-174/stream
+curl -N -H "Authorization: Bearer $RUNTRACE_API_TOKEN" \
+  http://localhost:8000/api/v1/runs/RUN-174/stream
 # event: metric
 # data: {"name":"validation_loss","value":3.404,"step":600,...}`}</Code>
           <Button render={<a href="/api/docs" target="_blank" rel="noreferrer" />} nativeButton={false}><BookOpen data-icon="inline-start" />Open interactive API reference</Button>

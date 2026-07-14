@@ -30,7 +30,7 @@ from webauthn.helpers.structs import (
 
 from .config import settings
 from .database import SessionLocal, get_db
-from .models import AuthCeremony, AuthSession, Identity, PasskeyCredential, now_utc
+from .models import ApiToken, AuthCeremony, AuthSession, Identity, PasskeyCredential, now_utc
 
 
 SESSION_COOKIE = "runtrace_session"
@@ -80,6 +80,11 @@ class PasskeyNameRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
 
 
+class ApiTokenCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    expires_in_days: int | None = Field(default=None, ge=1, le=365)
+
+
 def _hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -113,10 +118,21 @@ def _identity_payload(identity: Identity, include_passkeys: bool = True) -> dict
     return payload
 
 
+def _api_token_payload(token: ApiToken) -> dict[str, Any]:
+    return {
+        "id": token.id,
+        "name": token.name,
+        "prefix": token.token_prefix,
+        "last_used_at": token.last_used_at,
+        "expires_at": token.expires_at,
+        "created_at": token.created_at,
+    }
+
+
 def _principal(request: Request) -> AuthPrincipal:
     principal = getattr(request.state, "identity", None)
     if not principal:
-        raise HTTPException(401, "Sign in with a passkey to continue")
+        raise HTTPException(401, "Sign in with a passkey or provide a valid bearer token")
     return principal
 
 
@@ -212,10 +228,29 @@ async def authenticate_request(request: Request, call_next):
         return await call_next(request)
 
     raw_token = request.cookies.get(SESSION_COOKIE)
+    authorization = request.headers.get("authorization", "")
+    bearer_token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else None
     configured = False
     with SessionLocal() as session:
         configured = bool(session.scalar(select(func.count()).select_from(Identity)))
-        if raw_token:
+        if bearer_token:
+            api_token = session.scalar(
+                select(ApiToken)
+                .options(selectinload(ApiToken.identity))
+                .where(ApiToken.token_hash == _hash(bearer_token))
+            )
+            if (
+                api_token
+                and api_token.identity.status == "active"
+                and (api_token.expires_at is None or _aware(api_token.expires_at) > now_utc())
+            ):
+                identity = api_token.identity
+                request.state.identity = AuthPrincipal(identity.id, identity.name, identity.role, identity.status)
+                if not api_token.last_used_at or now_utc() - _aware(api_token.last_used_at) > timedelta(minutes=5):
+                    api_token.last_used_at = now_utc()
+                    identity.last_active_at = now_utc()
+                    session.commit()
+        if raw_token and not request.state.identity:
             auth_session = session.scalar(
                 select(AuthSession)
                 .options(selectinload(AuthSession.identity))
@@ -235,7 +270,7 @@ async def authenticate_request(request: Request, call_next):
     if path == "/health" or path.startswith("/api/v1/auth/"):
         return await call_next(request)
     if path.startswith("/api/") and not request.state.identity:
-        detail = "This RunTrace instance needs an owner" if not configured else "Sign in with a passkey to continue"
+        detail = "This RunTrace instance needs an owner" if not configured else "Sign in with a passkey or provide a valid bearer token"
         return Response(content=json.dumps({"detail": detail}), status_code=428 if not configured else 401, media_type="application/json")
     return await call_next(request)
 
@@ -463,6 +498,58 @@ def logout(request: Request, response: Response, session: Session = Depends(get_
     response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="lax", secure=settings.secure_session_cookie)
 
 
+@router.get("/tokens")
+def list_api_tokens(
+    request: Request,
+    session: Session = Depends(get_db),
+    _: AuthPrincipal = Depends(_principal),
+) -> list[dict[str, Any]]:
+    tokens = session.scalars(
+        select(ApiToken)
+        .where(ApiToken.identity_id == request.state.identity.id)
+        .order_by(ApiToken.created_at.desc())
+    ).all()
+    return [_api_token_payload(token) for token in tokens]
+
+
+@router.post("/tokens", status_code=201)
+def create_api_token(
+    body: ApiTokenCreateRequest,
+    request: Request,
+    session: Session = Depends(get_db),
+    _: AuthPrincipal = Depends(_principal),
+) -> dict[str, Any]:
+    raw_token = f"rt_{secrets.token_urlsafe(32)}"
+    token = ApiToken(
+        identity_id=request.state.identity.id,
+        name=body.name.strip(),
+        token_hash=_hash(raw_token),
+        token_prefix=raw_token[:11],
+        expires_at=now_utc() + timedelta(days=body.expires_in_days) if body.expires_in_days else None,
+    )
+    session.add(token)
+    session.commit()
+    session.refresh(token)
+    return {"token": raw_token, "api_token": _api_token_payload(token)}
+
+
+@router.delete("/tokens/{token_id}", status_code=204)
+def revoke_api_token(
+    token_id: str,
+    request: Request,
+    session: Session = Depends(get_db),
+    _: AuthPrincipal = Depends(_principal),
+) -> None:
+    token = session.scalar(select(ApiToken).where(
+        ApiToken.id == token_id,
+        ApiToken.identity_id == request.state.identity.id,
+    ))
+    if not token:
+        raise HTTPException(404, "API token not found")
+    session.delete(token)
+    session.commit()
+
+
 @router.get("/identities")
 def list_identities(session: Session = Depends(get_db), _: AuthPrincipal = Depends(_admin)) -> list[dict[str, Any]]:
     identities = session.scalars(select(Identity).options(selectinload(Identity.passkeys)).order_by(Identity.created_at)).all()
@@ -530,6 +617,7 @@ def update_identity(
         identity.status = body.status
         if body.status == "suspended":
             session.execute(delete(AuthSession).where(AuthSession.identity_id == identity.id))
+            session.execute(delete(ApiToken).where(ApiToken.identity_id == identity.id))
     session.commit()
     session.refresh(identity)
     return _identity_payload(identity)

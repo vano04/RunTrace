@@ -57,6 +57,7 @@ class Identity(Base):
 
     passkeys: Mapped[list[PasskeyCredential]] = relationship(back_populates="identity", cascade="all, delete-orphan")
     sessions: Mapped[list[AuthSession]] = relationship(back_populates="identity", cascade="all, delete-orphan")
+    api_tokens: Mapped[list[ApiToken]] = relationship(back_populates="identity", cascade="all, delete-orphan")
 
 
 class PasskeyCredential(Base):
@@ -87,6 +88,21 @@ class AuthSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     identity: Mapped[Identity] = relationship(back_populates="sessions")
+
+
+class ApiToken(Base):
+    __tablename__ = "api_tokens"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("token"))
+    identity_id: Mapped[str] = mapped_column(ForeignKey("identities.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    token_prefix: Mapped[str] = mapped_column(String(16), index=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+    identity: Mapped[Identity] = relationship(back_populates="api_tokens")
 
 
 class AuthCeremony(Base):

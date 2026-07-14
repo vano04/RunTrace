@@ -1,0 +1,24 @@
+{
+  "name": "runtrace",
+  "version": "0.1.0",
+  "description": "Persistent experiment memory and run tracking for autonomous research agents.",
+  "author": {
+    "name": "RunTrace contributors"
+  },
+  "homepage": "https://github.com/vano04/RunTrace",
+  "repository": "https://github.com/vano04/RunTrace",
+  "mcpServers": {
+    "runtrace": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@master",
+        "runtrace-mcp"
+      ],
+      "env": {
+        "RUNTRACE_BASE_URL": "${RUNTRACE_BASE_URL:-http://localhost:8000}",
+        "RUNTRACE_API_TOKEN": "${RUNTRACE_API_TOKEN}"
+      }
+    }
+  }
+}

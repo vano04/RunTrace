@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from runtrace_api.config import settings
 from runtrace_api.database import SessionLocal
-from runtrace_api.models import AuthSession, Identity, now_utc
+from runtrace_api.models import ApiToken, AuthSession, Identity, now_utc
 
 
 def test_dev_mode_bypasses_authentication(fresh_database):
@@ -86,3 +86,38 @@ def test_owner_cannot_be_demoted_or_suspended(fresh_database, monkeypatch):
     fresh_database.cookies.set("runtrace_session", raw_token)
     response = fresh_database.patch(f"/api/v1/auth/identities/{owner_id}", json={"status": "suspended"})
     assert response.status_code == 409
+
+
+def test_api_token_authentication_and_revocation(fresh_database, monkeypatch):
+    monkeypatch.setattr(settings, "dev", False)
+    raw_session = "owner-session-token"
+    with SessionLocal() as session:
+        owner = Identity(name="Owner", role="owner", status="active")
+        session.add(owner)
+        session.flush()
+        session.add(AuthSession(
+            identity_id=owner.id,
+            token_hash=hashlib.sha256(raw_session.encode()).hexdigest(),
+            expires_at=now_utc() + timedelta(hours=1),
+        ))
+        session.commit()
+    fresh_database.cookies.set("runtrace_session", raw_session)
+
+    created = fresh_database.post("/api/v1/auth/tokens", json={"name": "Codex", "expires_in_days": 30})
+    assert created.status_code == 201
+    secret = created.json()["token"]
+    token_id = created.json()["api_token"]["id"]
+    assert secret.startswith("rt_")
+    assert "token" not in fresh_database.get("/api/v1/auth/tokens").json()[0]
+
+    fresh_database.cookies.clear()
+    headers = {"Authorization": f"Bearer {secret}"}
+    assert fresh_database.get("/api/v1/projects", headers=headers).status_code == 200
+    with SessionLocal() as session:
+        stored = session.get(ApiToken, token_id)
+        assert stored is not None
+        assert stored.token_hash != secret
+        assert stored.last_used_at is not None
+
+    assert fresh_database.delete(f"/api/v1/auth/tokens/{token_id}", headers=headers).status_code == 204
+    assert fresh_database.get("/api/v1/projects", headers=headers).status_code == 401

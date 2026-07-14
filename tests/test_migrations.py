@@ -35,5 +35,5 @@ def test_existing_native_database_is_upgraded_to_current_schema(monkeypatch, tmp
     assert {"progress_metric_key", "progress_metric_direction"}.issubset(columns)
     assert "search_documents" in tables
     assert "tag_definitions" in tables
-    assert {"identities", "passkey_credentials", "auth_sessions", "auth_ceremonies"}.issubset(tables)
-    assert revision == "0005_instance_auth"
+    assert {"identities", "passkey_credentials", "auth_sessions", "auth_ceremonies", "api_tokens"}.issubset(tables)
+    assert revision == "0006_api_tokens"

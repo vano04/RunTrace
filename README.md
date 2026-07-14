@@ -14,6 +14,7 @@ The repository contains the maintained FastAPI service, Next.js application, Pyt
 - archive, restore, soft-delete, and audit history;
 - keyword search, with optional pgvector semantic retrieval;
 - browser passkey authentication for a self-hosted instance;
+- revocable, expiring agent tokens for headless clients;
 - HTTP, Python, CLI, and MCP interfaces.
 
 ## Architecture
@@ -63,7 +64,7 @@ This command is destructive. For ordinary shutdowns, use `docker compose down` w
 Native API development requires Python 3.11 or newer and PostgreSQL with the `vector` extension. Copy `.env.example` to `.env`, review its values, and run:
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv sync --extra dev
+UV_CACHE_DIR=.uv-cache uv sync --all-extras
 UV_CACHE_DIR=.uv-cache uv run uvicorn runtrace_api.main:app --reload --port 8000
 ```
 
@@ -76,9 +77,21 @@ npm --prefix apps/web run dev
 
 The Next.js server proxies `/api/*` to `INTERNAL_API_URL`, which defaults to `http://localhost:8000`.
 
-## Agent clients
+## Install the CLI and Python package
 
-In development mode, the CLI can retrieve context, search evidence, and track a command:
+You do not need to clone the repository on an agent or application host. Install the lightweight CLI directly from GitHub:
+
+```bash
+uv tool install 'runtrace @ git+https://github.com/vano04/RunTrace.git@master'
+```
+
+For Python applications:
+
+```bash
+python -m pip install 'runtrace @ git+https://github.com/vano04/RunTrace.git@master'
+```
+
+In normal mode, create a token at **Access → Your agent tokens**, then export `RUNTRACE_BASE_URL` and `RUNTRACE_API_TOKEN`. The CLI can retrieve context, search evidence, and track a command:
 
 ```bash
 runtrace context <project-slug>
@@ -88,13 +101,25 @@ runtrace exec --project <project-slug> --name "new variation" \
   python benchmark.py
 ```
 
-Run the MCP server over stdio:
+Run the MCP server over stdio without a persistent install:
 
 ```bash
-RUNTRACE_BASE_URL=http://localhost:8000 runtrace-mcp
+uvx --from 'runtrace[mcp] @ git+https://github.com/vano04/RunTrace.git@master' runtrace-mcp
 ```
 
-Authentication boundary: the current browser application supports passkey sessions, but the Python SDK, CLI, and MCP server do not yet support a non-interactive production credential. They work with `RUNTRACE_DEV=true`; do not expose that mode publicly. Treat authenticated remote agent access as not yet supported rather than bypassing the API behind an untrusted proxy.
+## Codex and Claude Code plugins
+
+```bash
+# Codex app and CLI
+codex plugin marketplace add vano04/RunTrace --ref master
+codex plugin add runtrace@runtrace
+
+# Claude Code
+claude plugin marketplace add vano04/RunTrace
+claude plugin install runtrace@runtrace --scope user
+```
+
+If the RunTrace CLI is already installed, `runtrace integrations install codex` or `runtrace integrations install claude` performs the same setup. Export the connection variables before starting the agent host. See [the integration guide](docs/integrations.md) for direct MCP and Python examples.
 
 ## Configuration
 
@@ -103,6 +128,8 @@ Authentication boundary: the current browser application supports passkey sessio
 | Variable | Purpose |
 | --- | --- |
 | `RUNTRACE_DATABASE_URL` | SQLAlchemy database connection URL |
+| `RUNTRACE_BASE_URL` | API URL used by CLI, SDK, and MCP clients |
+| `RUNTRACE_API_TOKEN` | Agent bearer token used by headless clients |
 | `RUNTRACE_ARTIFACT_PATH` | Local artifact storage directory |
 | `RUNTRACE_CORS_ORIGINS` | Comma-separated browser origins |
 | `RUNTRACE_DEV` | Disable auth for trusted local development only |
@@ -113,12 +140,14 @@ Authentication boundary: the current browser application supports passkey sessio
 | `RUNTRACE_MAX_ARTIFACT_SIZE` | Maximum upload size in bytes |
 | `RUNTRACE_CLAIM_TIMEOUT_SECONDS` | Age at which abandoned claims are requeued |
 
-Compose disables embeddings by default to keep the base deployment lightweight. See [the deployment guide](docs/README.md) and [authentication guide](docs/auth.md) before exposing an instance beyond localhost.
+Compose disables embeddings by default to keep the base deployment lightweight. See [the deployment guide](docs/README.md), [authentication guide](docs/auth.md), and [integration guide](docs/integrations.md) before exposing an instance beyond localhost.
 
 ## Verification
 
 ```bash
+UV_CACHE_DIR=.uv-cache uv sync --all-extras
 UV_CACHE_DIR=.uv-cache uv run pytest
+UV_CACHE_DIR=.uv-cache uv build
 npm --prefix apps/web run lint
 npm --prefix apps/web run build
 docker compose config
@@ -131,9 +160,12 @@ RUNTRACE_DEV=true docker compose config
 apps/api/            API service and database migrations
 apps/mcp/            MCP stdio server
 apps/web/            production web application
+.agents/              Codex repository marketplace
+.claude-plugin/       Claude Code repository marketplace
 docs/                deployment and authentication documentation
 examples/            small instrumentation examples
 packages/python_sdk/ Python SDK and CLI
+plugins/runtrace/     Codex and Claude Code plugin bundle
 scripts/             maintenance and import helpers
 tests/               API, migration, SDK, CLI, and MCP tests
 ```

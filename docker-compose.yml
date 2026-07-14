@@ -58,6 +58,7 @@ services:
     command: ["runtrace-mcp"]
     environment:
       RUNTRACE_BASE_URL: http://api:8000
+      RUNTRACE_API_TOKEN: "${RUNTRACE_API_TOKEN:-}"
     depends_on:
       api:
         condition: service_healthy

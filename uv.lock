@@ -1965,20 +1965,9 @@ name = "runtrace"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "alembic" },
-    { name = "fastapi" },
-    { name = "fastembed" },
     { name = "httpx" },
-    { name = "mcp" },
-    { name = "pgvector" },
     { name = "psutil" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "pydantic-settings" },
-    { name = "python-multipart" },
-    { name = "sqlalchemy" },
     { name = "typer" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "webauthn" },
 ]
 
 [package.optional-dependencies]
@@ -1986,27 +1975,44 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
 ]
+embeddings = [
+    { name = "fastembed" },
+]
+mcp = [
+    { name = "mcp" },
+]
+server = [
+    { name = "alembic" },
+    { name = "fastapi" },
+    { name = "pgvector" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic-settings" },
+    { name = "python-multipart" },
+    { name = "sqlalchemy" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "webauthn" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic", specifier = ">=1.16,<2" },
-    { name = "fastapi", specifier = ">=0.116,<1" },
-    { name = "fastembed", specifier = ">=0.7,<1" },
+    { name = "alembic", marker = "extra == 'server'", specifier = ">=1.16,<2" },
+    { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.116,<1" },
+    { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.7,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "mcp", specifier = ">=1.12,<2" },
-    { name = "pgvector", specifier = ">=0.4,<1" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.12,<2" },
+    { name = "pgvector", marker = "extra == 'server'", specifier = ">=0.4,<1" },
     { name = "psutil", specifier = ">=7,<8" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
-    { name = "pydantic-settings", specifier = ">=2.10,<3" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'server'", specifier = ">=3.2,<4" },
+    { name = "pydantic-settings", marker = "extra == 'server'", specifier = ">=2.10,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4,<9" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.2,<7" },
-    { name = "python-multipart", specifier = ">=0.0.20,<1" },
-    { name = "sqlalchemy", specifier = ">=2.0,<3" },
+    { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.20,<1" },
+    { name = "sqlalchemy", marker = "extra == 'server'", specifier = ">=2.0,<3" },
     { name = "typer", specifier = ">=0.16,<1" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
-    { name = "webauthn", specifier = ">=3,<4" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.35,<1" },
+    { name = "webauthn", marker = "extra == 'server'", specifier = ">=3,<4" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["mcp", "server", "embeddings", "dev"]
 
 [[package]]
 name = "shellingham"

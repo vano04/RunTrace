@@ -29,9 +29,8 @@ Before exposing RunTrace on a network:
 5. Keep PostgreSQL and the API private to the host or internal network where possible. The checked-in Compose file publishes the API on port 8000 for local development and diagnostics.
 6. Keep `RUNTRACE_DEV=false` and `RUNTRACE_SEED_DEMO=false`.
 7. Arrange database and artifact-volume backups, then test restoration.
-8. Add resource limits, log collection, and monitoring appropriate to the host.
-
-The project does not yet provide non-interactive credentials for SDK, CLI, or MCP clients in normal mode. Do not compensate by enabling development mode on a public deployment.
+8. Create separate expiring agent tokens for each CLI or MCP host and store them in that host's secret manager.
+9. Add resource limits, log collection, and monitoring appropriate to the host.
 
 ## Environment
 

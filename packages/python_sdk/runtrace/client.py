@@ -46,11 +46,23 @@ def _metadata(cwd: str) -> dict[str, Any]:
 
 
 class RunTrace:
-    def __init__(self, base_url: str = "http://localhost:8000", api_key: str | None = None, strict: bool = False, timeout: float = 5.0):
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8000",
+        api_token: str | None = None,
+        strict: bool = False,
+        timeout: float = 5.0,
+        *,
+        api_key: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
+        self.api_token = api_token or api_key
         self.strict = strict
-        self.client = httpx.Client(base_url=self.base_url, timeout=timeout, headers={"Authorization": f"Bearer {api_key}"} if api_key else {})
+        self.client = httpx.Client(
+            base_url=self.base_url,
+            timeout=timeout,
+            headers={"Authorization": f"Bearer {self.api_token}"} if self.api_token else {},
+        )
         self._buffer: deque[tuple[str, str, dict[str, Any], str]] = deque(maxlen=2000)
         self._lock = threading.Lock()
         atexit.register(self.flush)
@@ -218,12 +230,21 @@ class Run:
         self._finished = True
 
 
-_default = RunTrace(base_url=os.getenv("RUNTRACE_BASE_URL", "http://localhost:8000"), api_key=os.getenv("RUNTRACE_API_KEY"))
+_default = RunTrace(
+    base_url=os.getenv("RUNTRACE_BASE_URL", "http://localhost:8000"),
+    api_token=os.getenv("RUNTRACE_API_TOKEN") or os.getenv("RUNTRACE_API_KEY"),
+)
 
 
-def configure(base_url: str = "http://localhost:8000", api_key: str | None = None, strict: bool = False) -> RunTrace:
+def configure(
+    base_url: str = "http://localhost:8000",
+    api_token: str | None = None,
+    strict: bool = False,
+    *,
+    api_key: str | None = None,
+) -> RunTrace:
     global _default
-    _default = RunTrace(base_url=base_url, api_key=api_key, strict=strict)
+    _default = RunTrace(base_url=base_url, api_token=api_token or api_key, strict=strict)
     return _default
 
 

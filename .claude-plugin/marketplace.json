@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "runtrace",
+  "description": "Official RunTrace plugins for research agents.",
+  "owner": {
+    "name": "RunTrace contributors"
+  },
+  "plugins": [
+    {
+      "name": "runtrace",
+      "description": "Persistent experiment memory and run tracking for autonomous research agents.",
+      "source": "./plugins/runtrace",
+      "category": "development",
+      "homepage": "https://github.com/vano04/RunTrace"
+    }
+  ]
+}

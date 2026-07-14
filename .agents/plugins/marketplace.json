@@ -1,0 +1,20 @@
+{
+  "name": "runtrace",
+  "interface": {
+    "displayName": "RunTrace"
+  },
+  "plugins": [
+    {
+      "name": "runtrace",
+      "source": {
+        "source": "local",
+        "path": "./plugins/runtrace"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

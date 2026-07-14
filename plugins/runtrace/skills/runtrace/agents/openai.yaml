@@ -1,0 +1,4 @@
+interface:
+  display_name: "RunTrace"
+  short_description: "Use shared experiment memory safely"
+  default_prompt: "Use RunTrace to retrieve prior evidence and record this experiment."

@@ -23,6 +23,15 @@ export interface Passkey {
   created_at: string
 }
 
+export interface ApiToken {
+  id: string
+  name: string
+  prefix: string
+  last_used_at: string | null
+  expires_at: string | null
+  created_at: string
+}
+
 export interface AuthStatus {
   dev: boolean
   configured: boolean
@@ -146,4 +155,7 @@ export const auth = {
   updateIdentity: (id: string, body: { role?: "admin" | "member"; status?: "active" | "suspended" }) => api<AuthIdentity>(`/api/v1/auth/identities/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   setupLink: (id: string) => api<{ setup_token: string; setup_path: string }>(`/api/v1/auth/identities/${id}/setup-link`, { method: "POST" }),
   revokePasskey: (identityId: string, passkeyId: string) => api<void>(`/api/v1/auth/identities/${identityId}/passkeys/${passkeyId}`, { method: "DELETE" }),
+  tokens: () => api<ApiToken[]>("/api/v1/auth/tokens", { cache: "no-store" }),
+  createToken: (body: { name: string; expires_in_days: number | null }) => api<{ token: string; api_token: ApiToken }>("/api/v1/auth/tokens", { method: "POST", body: JSON.stringify(body) }),
+  revokeToken: (id: string) => api<void>(`/api/v1/auth/tokens/${id}`, { method: "DELETE" }),
 }
