@@ -24,7 +24,7 @@ export function AccountMenu() {
           <DropdownMenuLabel><span className="block truncate text-foreground">{identity.username}</span><span className="block font-normal capitalize">{identity.role}</span></DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        {identity.role !== "member" ? <DropdownMenuItem render={<Link href="/access" />}><ShieldCheck />Access</DropdownMenuItem> : null}
+        <DropdownMenuItem render={<Link href="/access" />}><ShieldCheck />{identity.role === "member" ? "Agent tokens" : "Access"}</DropdownMenuItem>
         <DropdownMenuItem render={<Link href="/account" />}><KeyRound />{identity.password_set === false ? "Set password" : "Change password"}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={() => signOut().catch(() => toast.error("Could not sign out"))}><LogOut />Sign out</DropdownMenuItem>

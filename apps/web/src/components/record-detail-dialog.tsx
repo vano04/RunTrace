@@ -93,20 +93,20 @@ export function RecordDetailDialog({ selection, slug, baselineId, metric, onClos
   }, [baselineId, onClose, selection, slug])
 
   useEffect(() => {
-    if (!selection || selection.kind !== "run" || !selectedRunning) return
-    const source = new EventSource(`/api/v1/runs/${selection.id}/stream`)
-    const refresh = () => runtrace.run(selection.id).then(setRecord).catch(() => undefined)
+    if (!selection) return
+    const refresh = () => (selection.kind === "run" ? runtrace.run(selection.id) : runtrace.experiment(slug, selection.id)).then(setRecord).catch(() => undefined)
     const interval = window.setInterval(refresh, 2_000)
-    source.addEventListener("metric", refresh)
-    source.addEventListener("status", (event) => {
+    const source = selection.kind === "run" && selectedRunning ? new EventSource(`/api/v1/runs/${selection.id}/stream`) : null
+    source?.addEventListener("metric", refresh)
+    source?.addEventListener("status", (event) => {
       const status = JSON.parse((event as MessageEvent).data) as { lifecycle: string }
       if (status.lifecycle !== "running") refresh()
     })
     return () => {
       window.clearInterval(interval)
-      source.close()
+      source?.close()
     }
-  }, [selectedRunning, selection])
+  }, [selectedRunning, selection, slug])
 
   function reloadRun() {
     if (!selection || selection.kind !== "run") return

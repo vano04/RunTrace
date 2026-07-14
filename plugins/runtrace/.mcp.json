@@ -6,7 +6,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "runtrace-ai[mcp]==0.1.2",
+        "runtrace-ai[mcp]==0.1.3",
         "runtrace-mcp"
       ],
       "env_vars": ["RUNTRACE_BASE_URL", "RUNTRACE_API_TOKEN"]

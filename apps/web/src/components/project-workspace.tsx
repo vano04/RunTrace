@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { CreateExperimentDialog } from "@/components/create-experiment-dialog"
 import { ProgressChart } from "@/components/progress-chart"
 import { ProjectShell } from "@/components/project-shell"
+import { ProjectAccessCard } from "@/components/project-access-card"
 import { RecordActions } from "@/components/record-actions"
 import { RecordDetailDialog, type RecordSelection } from "@/components/record-detail-dialog"
 import { StatusBadge } from "@/components/status-badge"
@@ -27,6 +28,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { runtrace } from "@/lib/api"
 import type { Dashboard, ProgressData, Run, SearchResult } from "@/lib/types"
+import { useAutoRefresh } from "@/lib/use-auto-refresh"
 
 export type ProjectView = "dashboard" | "search" | "archive" | "settings"
 
@@ -209,6 +211,7 @@ function SettingsView({ data, slug, reload }: { data: Dashboard; slug: string; r
         <div className="divide-y rounded-lg border">{data.tag_definitions.map((tag) => <div key={tag.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center"><div className="w-full sm:w-72"><Input value={tagNames[tag.id] ?? tag.name} onChange={(event) => setTagNames((current) => ({ ...current, [tag.id]: event.target.value }))} aria-label={`Tag name ${tag.name}`} /><p className="mt-1 text-xs text-muted-foreground">{tag.rule_key ? "Automatically assigned from autoresearch run data" : "Registered tag"}</p></div><div className="flex gap-2 sm:ml-auto"><Button type="button" size="sm" variant="outline" disabled={tagPending === tag.id || !tagNames[tag.id]?.trim() || tagNames[tag.id]?.trim() === tag.name} onClick={() => renameTag(tag.id)}><Save />Save</Button><Button type="button" size="icon-sm" variant="ghost" aria-label={`Delete ${tag.name}`} disabled={tagPending === tag.id} onClick={() => removeTag(tag.id, tag.name)}><Trash2 /></Button></div></div>)}</div>
       </CardContent></Card>
       <Card><CardHeader><CardTitle>Agent bootstrap</CardTitle><CardDescription>Retrieve program.md, exclusions, baseline, metric definitions, proposals, and recent evidence in one call.</CardDescription></CardHeader><CardContent><div className="flex items-center gap-2 rounded-lg border bg-muted/50 p-3"><code className="min-w-0 flex-1 truncate text-xs">{bootstrap}</code><Button type="button" size="icon-sm" variant="ghost" aria-label="Copy bootstrap call" onClick={() => { navigator.clipboard.writeText(bootstrap); toast.success("Copied") }}><Copy /></Button></div><FieldDescription className="mt-3">Registry endpoint: {data.project.registry_endpoint}</FieldDescription></CardContent></Card>
+      <ProjectAccessCard project={slug} />
       <Card className="border-destructive/40"><CardHeader><CardTitle className="text-destructive">Delete project</CardTitle><CardDescription>Permanently removes this project, its proposals, runs, metrics, events, and uploaded artifacts.</CardDescription></CardHeader><CardContent><AlertDialog><AlertDialogTrigger render={<Button type="button" variant="destructive" />}>Delete {data.project.name}</AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete {data.project.name}?</AlertDialogTitle><AlertDialogDescription>This cannot be undone. All experiment history and artifacts in this project will be permanently removed.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deleting} onClick={deleteProject}>{deleting ? "Deleting…" : "Delete project"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></CardContent></Card>
     </div>
   </form>
@@ -220,27 +223,24 @@ export function ProjectWorkspace({ slug, view }: { slug: string; view: ProjectVi
   const [error, setError] = useState<string | null>(null)
   const [selectedRecord, setSelectedRecord] = useState<RecordSelection>(null)
   const closeRecord = useCallback(() => setSelectedRecord(null), [])
+  const loadedRef = useRef(false)
   const progressQuery = useRef({ metric: "", window: "all", includeTags: [] as string[], excludeTags: [] as string[] })
   const load = useCallback(async () => {
     const query = progressQuery.current
-    try { const [dashboard, progressData] = await Promise.all([runtrace.dashboard(slug), runtrace.progress(slug, query.metric, query.window, query.includeTags, query.excludeTags)]); setData(dashboard); setProgress(progressData); setError(null) }
-    catch (caught) { setError(caught instanceof Error ? caught.message : "Could not load project") }
+    try { const [dashboard, progressData] = await Promise.all([runtrace.dashboard(slug), runtrace.progress(slug, query.metric, query.window, query.includeTags, query.excludeTags)]); loadedRef.current = true; setData(dashboard); setProgress(progressData); setError(null) }
+    catch (caught) { if (!loadedRef.current) setError(caught instanceof Error ? caught.message : "Could not load project") }
   }, [slug])
   useEffect(() => {
     let active = true
     Promise.all([runtrace.dashboard(slug), runtrace.progress(slug)]).then(([dashboard, progressData]) => {
       if (!active) return
-      setData(dashboard); setProgress(progressData); setError(null)
+      loadedRef.current = true; setData(dashboard); setProgress(progressData); setError(null)
     }).catch((caught) => {
       if (active) setError(caught instanceof Error ? caught.message : "Could not load project")
     })
     return () => { active = false }
   }, [slug])
-  useEffect(() => {
-    if (!data?.active_runs.length) return
-    const streams = data.active_runs.map((run) => { const source = new EventSource(`/api/v1/runs/${run.id}/stream`); source.addEventListener("status", (event) => { const status = JSON.parse((event as MessageEvent).data); if (status.lifecycle !== "running") load() }); source.addEventListener("metric", () => { const query = progressQuery.current; runtrace.progress(slug, query.metric, query.window, query.includeTags, query.excludeTags).then(setProgress).catch(() => undefined) }); return source })
-    return () => streams.forEach((source) => source.close())
-  }, [data?.active_runs, load, slug])
+  useAutoRefresh(load)
 
   if (error) return <main className="grid min-h-screen place-items-center p-6"><Empty className="max-w-lg border"><EmptyHeader><EmptyMedia variant="icon"><Database /></EmptyMedia><EmptyTitle>RunTrace API unavailable</EmptyTitle><EmptyDescription>{error}</EmptyDescription></EmptyHeader><Button onClick={load}>Try again</Button></Empty></main>
   if (!data || !progress) return <div className="min-h-screen lg:grid lg:grid-cols-[248px_1fr]"><div className="hidden border-r bg-sidebar lg:block" /><main className="mx-auto w-full max-w-[1240px] p-8"><Skeleton className="h-10 w-64" /><Skeleton className="mt-8 h-80" /><Skeleton className="mt-6 h-36" /></main></div>

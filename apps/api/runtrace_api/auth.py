@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from .config import settings
 from .database import SessionLocal, get_db
-from .models import ApiToken, AuthSession, Identity, now_utc
+from .models import ApiToken, ApiTokenProject, Artifact, AuthSession, Identity, Project, ProjectMembership, Run, now_utc
 
 
 SESSION_COOKIE = "runtrace_session"
@@ -36,6 +37,7 @@ class AuthPrincipal:
     role: str
     status: str
     dev: bool = False
+    token_project_ids: frozenset[str] | None = None
 
 
 class BootstrapRequest(BaseModel):
@@ -71,6 +73,17 @@ class IdentityUpdateRequest(BaseModel):
 class ApiTokenCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     expires_in_days: int | None = Field(default=None, ge=1, le=365)
+    project_ids: list[str] = Field(default_factory=list)
+
+
+class ProjectMemberRequest(BaseModel):
+    identity_id: str | None = None
+    username: str | None = Field(default=None, min_length=3, max_length=32)
+    role: Literal["owner", "editor", "viewer"] = "viewer"
+
+
+class ProjectMemberUpdateRequest(BaseModel):
+    role: Literal["owner", "editor", "viewer"]
 
 
 def _hash(value: str) -> str:
@@ -156,15 +169,22 @@ def _identity_payload(identity: Identity) -> dict[str, Any]:
     }
 
 
-def _api_token_payload(token: ApiToken) -> dict[str, Any]:
-    return {
+def _api_token_payload(token: ApiToken, include_identity: bool = False) -> dict[str, Any]:
+    payload = {
         "id": token.id,
         "name": token.name,
         "prefix": token.token_prefix,
         "last_used_at": token.last_used_at,
         "expires_at": token.expires_at,
         "created_at": token.created_at,
+        "projects": [
+            {"id": grant.project.id, "slug": grant.project.slug, "name": grant.project.name}
+            for grant in token.project_grants
+        ],
     }
+    if include_identity:
+        payload["identity"] = {"id": token.identity.id, "username": token.identity.username}
+    return payload
 
 
 def _principal(request: Request) -> AuthPrincipal:
@@ -178,6 +198,47 @@ def _admin(principal: AuthPrincipal = Depends(_principal)) -> AuthPrincipal:
     if principal.role not in {"owner", "admin"}:
         raise HTTPException(403, "Admin access is required")
     return principal
+
+
+def _project_id_for_request(session: Session, path: str) -> str | None:
+    project_match = re.match(r"^/api/v1/projects/([^/]+)", path)
+    if project_match:
+        identifier = project_match.group(1)
+        return session.scalar(select(Project.id).where((Project.id == identifier) | (Project.slug == identifier)))
+    run_match = re.match(r"^/api/v1/runs/([^/]+)", path)
+    if run_match:
+        identifier = run_match.group(1)
+        exact = session.scalar(select(Run.project_id).where(Run.id == identifier))
+        if exact:
+            return exact
+        project_ids = list(session.scalars(select(Run.project_id).where(Run.display_id == identifier)))
+        if len(project_ids) > 1:
+            raise HTTPException(409, "Run display ID is ambiguous; use the full run ID")
+        return project_ids[0] if project_ids else None
+    artifact_match = re.match(r"^/api/v1/artifacts/([^/]+)", path)
+    if artifact_match:
+        return session.scalar(
+            select(Run.project_id).join(Artifact, Artifact.run_id == Run.id).where(Artifact.id == artifact_match.group(1))
+        )
+    return None
+
+
+def _authorize_project_request(session: Session, principal: AuthPrincipal, path: str, method: str) -> None:
+    project_id = _project_id_for_request(session, path)
+    if not project_id:
+        return
+    if principal.token_project_ids is not None and project_id not in principal.token_project_ids:
+        raise HTTPException(403, "This API token is not authorized for this project")
+    if principal.dev or principal.role in {"owner", "admin"}:
+        return
+    role = session.scalar(select(ProjectMembership.role).where(
+        ProjectMembership.project_id == project_id,
+        ProjectMembership.identity_id == principal.id,
+    ))
+    if not role:
+        raise HTTPException(403, "You do not have access to this project")
+    if method not in {"GET", "HEAD", "OPTIONS"} and role not in {"owner", "editor"}:
+        raise HTTPException(403, "Editor access is required for this project")
 
 
 def _delete_expired(session: Session) -> None:
@@ -218,7 +279,7 @@ async def authenticate_request(request: Request, call_next):
         if bearer_token:
             api_token = session.scalar(
                 select(ApiToken)
-                .options(selectinload(ApiToken.identity))
+                .options(selectinload(ApiToken.identity), selectinload(ApiToken.project_grants))
                 .where(ApiToken.token_hash == _hash(bearer_token))
             )
             if (
@@ -227,7 +288,10 @@ async def authenticate_request(request: Request, call_next):
                 and (api_token.expires_at is None or _aware(api_token.expires_at) > now_utc())
             ):
                 identity = api_token.identity
-                request.state.identity = AuthPrincipal(identity.id, identity.username, identity.role, identity.status)
+                request.state.identity = AuthPrincipal(
+                    identity.id, identity.username, identity.role, identity.status,
+                    token_project_ids=frozenset(grant.project_id for grant in api_token.project_grants),
+                )
                 if not api_token.last_used_at or now_utc() - _aware(api_token.last_used_at) > timedelta(minutes=5):
                     api_token.last_used_at = now_utc()
                     identity.last_active_at = now_utc()
@@ -254,6 +318,12 @@ async def authenticate_request(request: Request, call_next):
     if path.startswith("/api/") and not request.state.identity:
         detail = "This RunTrace instance needs an owner" if not configured else "Sign in with a password or provide a valid bearer token"
         return Response(content=json.dumps({"detail": detail}), status_code=428 if not configured else 401, media_type="application/json")
+    if path.startswith("/api/") and request.state.identity:
+        with SessionLocal() as session:
+            try:
+                _authorize_project_request(session, request.state.identity, path, request.method)
+            except HTTPException as exc:
+                return Response(content=json.dumps({"detail": exc.detail}), status_code=exc.status_code, media_type="application/json")
     return await call_next(request)
 
 
@@ -362,12 +432,15 @@ def list_api_tokens(
     session: Session = Depends(get_db),
     _: AuthPrincipal = Depends(_principal),
 ) -> list[dict[str, Any]]:
-    tokens = session.scalars(
-        select(ApiToken)
-        .where(ApiToken.identity_id == request.state.identity.id)
-        .order_by(ApiToken.created_at.desc())
-    ).all()
-    return [_api_token_payload(token) for token in tokens]
+    principal = request.state.identity
+    query = select(ApiToken).options(
+        selectinload(ApiToken.identity),
+        selectinload(ApiToken.project_grants).selectinload(ApiTokenProject.project),
+    ).order_by(ApiToken.created_at.desc())
+    if principal.role not in {"owner", "admin"}:
+        query = query.where(ApiToken.identity_id == principal.id)
+    tokens = session.scalars(query).all()
+    return [_api_token_payload(token, include_identity=principal.role in {"owner", "admin"}) for token in tokens]
 
 
 @router.post("/tokens", status_code=201)
@@ -377,6 +450,25 @@ def create_api_token(
     session: Session = Depends(get_db),
     _: AuthPrincipal = Depends(_principal),
 ) -> dict[str, Any]:
+    principal = request.state.identity
+    project_ids = set(body.project_ids)
+    if not project_ids:
+        if principal.role in {"owner", "admin"}:
+            project_ids = set(session.scalars(select(Project.id)))
+        else:
+            project_ids = set(session.scalars(select(ProjectMembership.project_id).where(ProjectMembership.identity_id == principal.id)))
+    if not project_ids:
+        raise HTTPException(400, "Select at least one project for this token")
+    projects = session.scalars(select(Project).where(Project.id.in_(project_ids))).all()
+    if len(projects) != len(project_ids):
+        raise HTTPException(400, "One or more projects do not exist")
+    if principal.role not in {"owner", "admin"}:
+        accessible = set(session.scalars(select(ProjectMembership.project_id).where(
+            ProjectMembership.identity_id == principal.id,
+            ProjectMembership.project_id.in_(project_ids),
+        )))
+        if accessible != project_ids:
+            raise HTTPException(403, "You can only create tokens for projects you can access")
     raw_token = f"rt_{secrets.token_urlsafe(32)}"
     token = ApiToken(
         identity_id=request.state.identity.id,
@@ -386,8 +478,13 @@ def create_api_token(
         expires_at=now_utc() + timedelta(days=body.expires_in_days) if body.expires_in_days else None,
     )
     session.add(token)
+    session.flush()
+    session.add_all(ApiTokenProject(api_token_id=token.id, project_id=project_id) for project_id in project_ids)
     session.commit()
     session.refresh(token)
+    token = session.scalar(select(ApiToken).options(
+        selectinload(ApiToken.project_grants).selectinload(ApiTokenProject.project)
+    ).where(ApiToken.id == token.id))
     return {"token": raw_token, "api_token": _api_token_payload(token)}
 
 
@@ -398,13 +495,101 @@ def revoke_api_token(
     session: Session = Depends(get_db),
     _: AuthPrincipal = Depends(_principal),
 ) -> None:
-    token = session.scalar(select(ApiToken).where(
-        ApiToken.id == token_id,
-        ApiToken.identity_id == request.state.identity.id,
-    ))
+    principal = request.state.identity
+    query = select(ApiToken).where(ApiToken.id == token_id)
+    if principal.role not in {"owner", "admin"}:
+        query = query.where(ApiToken.identity_id == principal.id)
+    token = session.scalar(query)
     if not token:
         raise HTTPException(404, "API token not found")
     session.delete(token)
+    session.commit()
+
+
+def _project_admin(session: Session, project_id: str, principal: AuthPrincipal) -> None:
+    if principal.dev or principal.role in {"owner", "admin"}:
+        return
+    role = session.scalar(select(ProjectMembership.role).where(
+        ProjectMembership.project_id == project_id,
+        ProjectMembership.identity_id == principal.id,
+    ))
+    if role != "owner":
+        raise HTTPException(403, "Project owner access is required")
+
+
+def _project(session: Session, identifier: str) -> Project:
+    project = session.scalar(select(Project).where((Project.id == identifier) | (Project.slug == identifier)))
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return project
+
+
+def _member_payload(membership: ProjectMembership) -> dict[str, Any]:
+    return {
+        "identity": _identity_payload(membership.identity),
+        "role": membership.role,
+        "created_at": membership.created_at,
+        "updated_at": membership.updated_at,
+    }
+
+
+@router.get("/projects/{project}/members")
+def list_project_members(project: str, session: Session = Depends(get_db), principal: AuthPrincipal = Depends(_principal)) -> list[dict[str, Any]]:
+    current = _project(session, project)
+    _project_admin(session, current.id, principal)
+    memberships = session.scalars(select(ProjectMembership).options(selectinload(ProjectMembership.identity)).where(
+        ProjectMembership.project_id == current.id
+    ).order_by(ProjectMembership.created_at)).all()
+    return [_member_payload(membership) for membership in memberships]
+
+
+@router.post("/projects/{project}/members", status_code=201)
+def add_project_member(project: str, body: ProjectMemberRequest, session: Session = Depends(get_db), principal: AuthPrincipal = Depends(_principal)) -> dict[str, Any]:
+    current = _project(session, project)
+    _project_admin(session, current.id, principal)
+    identity = session.get(Identity, body.identity_id) if body.identity_id else session.scalar(select(Identity).where(Identity.username == (body.username or "").strip().lower()))
+    if not identity:
+        raise HTTPException(404, "Identity not found")
+    if session.scalar(select(ProjectMembership.id).where(ProjectMembership.project_id == current.id, ProjectMembership.identity_id == identity.id)):
+        raise HTTPException(409, "This identity already has project access")
+    membership = ProjectMembership(project_id=current.id, identity_id=identity.id, role=body.role)
+    session.add(membership)
+    session.commit()
+    membership = session.scalar(select(ProjectMembership).options(selectinload(ProjectMembership.identity)).where(ProjectMembership.id == membership.id))
+    return _member_payload(membership)
+
+
+@router.patch("/projects/{project}/members/{identity_id}")
+def update_project_member(project: str, identity_id: str, body: ProjectMemberUpdateRequest, session: Session = Depends(get_db), principal: AuthPrincipal = Depends(_principal)) -> dict[str, Any]:
+    current = _project(session, project)
+    _project_admin(session, current.id, principal)
+    membership = session.scalar(select(ProjectMembership).options(selectinload(ProjectMembership.identity)).where(
+        ProjectMembership.project_id == current.id, ProjectMembership.identity_id == identity_id
+    ))
+    if not membership:
+        raise HTTPException(404, "Project membership not found")
+    if membership.role == "owner" and body.role != "owner":
+        owners = session.scalar(select(func.count()).select_from(ProjectMembership).where(ProjectMembership.project_id == current.id, ProjectMembership.role == "owner")) or 0
+        if owners <= 1:
+            raise HTTPException(409, "A project must have at least one owner")
+    membership.role = body.role
+    session.commit()
+    session.refresh(membership)
+    return _member_payload(membership)
+
+
+@router.delete("/projects/{project}/members/{identity_id}", status_code=204)
+def remove_project_member(project: str, identity_id: str, session: Session = Depends(get_db), principal: AuthPrincipal = Depends(_principal)) -> None:
+    current = _project(session, project)
+    _project_admin(session, current.id, principal)
+    membership = session.scalar(select(ProjectMembership).where(ProjectMembership.project_id == current.id, ProjectMembership.identity_id == identity_id))
+    if not membership:
+        raise HTTPException(404, "Project membership not found")
+    if membership.role == "owner":
+        owners = session.scalar(select(func.count()).select_from(ProjectMembership).where(ProjectMembership.project_id == current.id, ProjectMembership.role == "owner")) or 0
+        if owners <= 1:
+            raise HTTPException(409, "A project must have at least one owner")
+    session.delete(membership)
     session.commit()
 
 

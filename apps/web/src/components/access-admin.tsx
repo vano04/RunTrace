@@ -17,6 +17,8 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { auth, type ApiToken, type AuthIdentity, type IdentityRole, type IdentityStatus } from "@/lib/auth"
+import { runtrace } from "@/lib/api"
+import type { Project } from "@/lib/types"
 
 function formatDate(value?: string | null) {
   if (!value) return "—"
@@ -97,21 +99,23 @@ function AddIdentityDialog({ onCreated }: { onCreated: (identity: AuthIdentity) 
   )
 }
 
-function AddTokenDialog({ onCreated }: { onCreated: (token: ApiToken) => void }) {
+function AddTokenDialog({ projects, onCreated }: { projects: Project[]; onCreated: (token: ApiToken) => void }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("Agent CLI")
   const [expires, setExpires] = useState("90")
   const [secret, setSecret] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
-  const reset = () => { setName("Agent CLI"); setExpires("90"); setSecret(null); setCopied(false) }
+  const [projectIds, setProjectIds] = useState<string[]>([])
+  useEffect(() => { setProjectIds(projects.map((project) => project.id)) }, [projects])
+  const reset = () => { setName("Agent CLI"); setExpires("90"); setSecret(null); setCopied(false); setProjectIds(projects.map((project) => project.id)) }
   const close = () => { setOpen(false); reset() }
   return <Dialog open={open} onOpenChange={(next) => { if (next) setOpen(true); else close() }}>
     <DialogTrigger render={<Button variant="outline" />}><Plus data-icon="inline-start" />Create token</DialogTrigger>
     <DialogContent className="sm:max-w-lg">
       <DialogHeader><DialogTitle>{secret ? "Copy your agent token" : "Create agent token"}</DialogTitle><DialogDescription>{secret ? "This token is shown once. Store it in your secret manager before closing." : "Use a scoped identity token for the Python CLI, MCP, Codex, or Claude Code."}</DialogDescription></DialogHeader>
-      {secret ? <div className="space-y-3"><div className="flex gap-2"><Input value={secret} readOnly className="font-mono text-xs" /><Button variant="outline" size="icon" aria-label="Copy token" onClick={() => copyText(secret).then(() => { setCopied(true); toast.success("Token copied") }).catch(() => toast.error("Could not copy token"))}>{copied ? <Check /> : <Copy />}</Button></div><p className="text-xs text-muted-foreground">Set it as <code>RUNTRACE_API_TOKEN</code>. RunTrace stores only its SHA-256 digest.</p></div> : <form id="add-token" className="space-y-4" onSubmit={(event) => { event.preventDefault(); setBusy(true); auth.createToken({ name, expires_in_days: expires ? Number(expires) : null }).then((result) => { setSecret(result.token); setCopied(false); onCreated(result.api_token) }).catch((error) => toast.error(error instanceof Error ? error.message : "Could not create token")).finally(() => setBusy(false)) }}><div className="space-y-2"><Label htmlFor="token-name">Name</Label><Input id="token-name" value={name} onChange={(event) => setName(event.target.value)} required /></div><div className="space-y-2"><Label htmlFor="token-expiry">Expires</Label><select id="token-expiry" value={expires} onChange={(event) => setExpires(event.target.value)} className="h-9 w-full rounded-lg border bg-background px-3 text-sm"><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="">Never</option></select></div></form>}
-      <DialogFooter>{secret ? <Button onClick={close}>I saved it</Button> : <Button form="add-token" type="submit" disabled={busy}>{busy ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <KeyRound data-icon="inline-start" />}Create token</Button>}</DialogFooter>
+      {secret ? <div className="space-y-3"><div className="flex gap-2"><Input value={secret} readOnly className="font-mono text-xs" /><Button variant="outline" size="icon" aria-label="Copy token" onClick={() => copyText(secret).then(() => { setCopied(true); toast.success("Token copied") }).catch(() => toast.error("Could not copy token"))}>{copied ? <Check /> : <Copy />}</Button></div><p className="text-xs text-muted-foreground">Set it as <code>RUNTRACE_API_TOKEN</code>. RunTrace stores only its SHA-256 digest.</p></div> : <form id="add-token" className="space-y-4" onSubmit={(event) => { event.preventDefault(); setBusy(true); auth.createToken({ name, expires_in_days: expires ? Number(expires) : null, project_ids: projectIds }).then((result) => { setSecret(result.token); setCopied(false); onCreated(result.api_token) }).catch((error) => toast.error(error instanceof Error ? error.message : "Could not create token")).finally(() => setBusy(false)) }}><div className="space-y-2"><Label htmlFor="token-name">Name</Label><Input id="token-name" value={name} onChange={(event) => setName(event.target.value)} required /></div><fieldset className="space-y-2"><Label>Projects</Label><div className="max-h-40 space-y-2 overflow-y-auto rounded-lg border p-3">{projects.map((project) => <label key={project.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={projectIds.includes(project.id)} onChange={(event) => setProjectIds((current) => event.target.checked ? [...current, project.id] : current.filter((id) => id !== project.id))} />{project.name}</label>)}</div><p className="text-xs text-muted-foreground">The token can only access the selected projects.</p></fieldset><div className="space-y-2"><Label htmlFor="token-expiry">Expires</Label><select id="token-expiry" value={expires} onChange={(event) => setExpires(event.target.value)} className="h-9 w-full rounded-lg border bg-background px-3 text-sm"><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="">Never</option></select></div></form>}
+      <DialogFooter>{secret ? <Button onClick={close}>I saved it</Button> : <Button form="add-token" type="submit" disabled={busy || projectIds.length === 0}>{busy ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : <KeyRound data-icon="inline-start" />}Create token</Button>}</DialogFooter>
     </DialogContent>
   </Dialog>
 }
@@ -123,10 +127,12 @@ export function AccessAdmin() {
   const [role, setRole] = useState<"all" | IdentityRole>("all")
   const [status, setStatus] = useState<"all" | IdentityStatus>("all")
   const [tokens, setTokens] = useState<ApiToken[] | null>(null)
+  const [projects, setProjects] = useState<Project[]>([])
+  const isAdmin = current.role === "owner" || current.role === "admin"
 
   const load = () => auth.identities().then(setIdentities).catch((error) => { toast.error(error instanceof Error ? error.message : "Could not load identities"); setIdentities([]) })
   const loadTokens = () => auth.tokens().then(setTokens).catch((error) => { toast.error(error instanceof Error ? error.message : "Could not load tokens"); setTokens([]) })
-  useEffect(() => { void load(); void loadTokens() }, [])
+  useEffect(() => { if (isAdmin) void load(); else setIdentities([]); void loadTokens(); void runtrace.projects().then(setProjects) }, [isAdmin])
 
   const filtered = useMemo(() => (identities ?? []).filter((item) => {
     const matchesQuery = item.username.toLowerCase().includes(query.toLowerCase())
@@ -141,7 +147,8 @@ export function AccessAdmin() {
     <main className="min-h-screen">
       <header className="flex h-16 items-center justify-between border-b px-4 sm:px-8"><div className="flex items-center gap-3"><RunTraceLogo /><span className="h-5 w-px bg-border" /><Button variant="ghost" render={<Link href="/" />} nativeButton={false}><ArrowLeft data-icon="inline-start" />Projects</Button></div><AccountMenu /></header>
       <section className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8 sm:py-12">
-        <div className="mb-10 flex flex-col justify-between gap-5 sm:flex-row sm:items-start"><div><h1 className="text-3xl font-semibold tracking-tight">Access</h1><p className="mt-2 text-muted-foreground">Manage who can sign in to this RunTrace instance.</p></div><AddIdentityDialog onCreated={(created) => setIdentities((items) => [...(items ?? []), created])} /></div>
+        <div className="mb-10 flex flex-col justify-between gap-5 sm:flex-row sm:items-start"><div><h1 className="text-3xl font-semibold tracking-tight">{isAdmin ? "Access" : "Agent tokens"}</h1><p className="mt-2 text-muted-foreground">{isAdmin ? "Manage identities and API access for this RunTrace instance." : "Create project-scoped credentials for headless clients."}</p></div>{isAdmin ? <AddIdentityDialog onCreated={(created) => setIdentities((items) => [...(items ?? []), created])} /> : null}</div>
+        {isAdmin ? <>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row">
           <div className="relative sm:w-80"><Search className="absolute top-2.5 left-3 size-4 text-muted-foreground" /><Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by username" aria-label="Search identities" /></div>
           <select aria-label="Filter by role" value={role} onChange={(event) => setRole(event.target.value as typeof role)} className="h-9 rounded-lg border bg-background px-3 text-sm"><option value="all">All roles</option><option value="owner">Owner</option><option value="admin">Admin</option><option value="member">Member</option></select>
@@ -155,8 +162,9 @@ export function AccessAdmin() {
             })}</TableBody></Table>
           ) : <Empty className="min-h-72"><EmptyHeader><EmptyMedia variant="icon"><UserRound /></EmptyMedia><EmptyTitle>No matching identities</EmptyTitle><EmptyDescription>Adjust your search or filters.</EmptyDescription></EmptyHeader></Empty>}
         </div>
-        <div className="mt-12 mb-4 flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Your agent tokens</h2><p className="mt-1 text-sm text-muted-foreground">Authenticate headless clients without sharing your browser session.</p></div><AddTokenDialog onCreated={(token) => setTokens((items) => [token, ...(items ?? [])])} /></div>
-        <div className="overflow-hidden rounded-xl border bg-card">{tokens === null ? <div className="p-4"><Skeleton className="h-14" /></div> : tokens.length ? <Table><TableHeader><TableRow><TableHead className="pl-5">Token</TableHead><TableHead>Prefix</TableHead><TableHead>Last used</TableHead><TableHead>Expires</TableHead><TableHead className="pr-5 text-right">Action</TableHead></TableRow></TableHeader><TableBody>{tokens.map((token) => <TableRow key={token.id}><TableCell className="pl-5 font-medium">{token.name}</TableCell><TableCell className="font-mono text-xs">{token.prefix}…</TableCell><TableCell>{formatDate(token.last_used_at)}</TableCell><TableCell>{token.expires_at ? formatDate(token.expires_at) : "Never"}</TableCell><TableCell className="pr-5 text-right"><Button variant="ghost" size="sm" onClick={() => { if (window.confirm(`Revoke ${token.name}? Connected agents will stop working immediately.`)) auth.revokeToken(token.id).then(() => { setTokens((items) => (items ?? []).filter((item) => item.id !== token.id)); toast.success("Token revoked") }).catch((error) => toast.error(error instanceof Error ? error.message : "Could not revoke token")) }}><Trash2 data-icon="inline-start" />Revoke</Button></TableCell></TableRow>)}</TableBody></Table> : <Empty className="min-h-52"><EmptyHeader><EmptyMedia variant="icon"><Bot /></EmptyMedia><EmptyTitle>No agent tokens</EmptyTitle><EmptyDescription>Create one before connecting a CLI or MCP host.</EmptyDescription></EmptyHeader></Empty>}</div>
+        </> : null}
+        <div className={`${isAdmin ? "mt-12" : ""} mb-4 flex items-start justify-between gap-4`}><div><h2 className="text-xl font-semibold">{isAdmin ? "All agent tokens" : "Your agent tokens"}</h2><p className="mt-1 text-sm text-muted-foreground">Authenticate headless clients without sharing a browser session.</p></div><AddTokenDialog projects={projects} onCreated={(token) => setTokens((items) => [token, ...(items ?? [])])} /></div>
+        <div className="overflow-hidden rounded-xl border bg-card">{tokens === null ? <div className="p-4"><Skeleton className="h-14" /></div> : tokens.length ? <Table><TableHeader><TableRow><TableHead className="pl-5">Token</TableHead>{isAdmin ? <TableHead>Owner</TableHead> : null}<TableHead>Projects</TableHead><TableHead>Prefix</TableHead><TableHead>Last used</TableHead><TableHead>Expires</TableHead><TableHead className="pr-5 text-right">Action</TableHead></TableRow></TableHeader><TableBody>{tokens.map((token) => <TableRow key={token.id}><TableCell className="pl-5 font-medium">{token.name}</TableCell>{isAdmin ? <TableCell>{token.identity?.username ?? "—"}</TableCell> : null}<TableCell className="max-w-64 text-sm">{token.projects.map((project) => project.name).join(", ")}</TableCell><TableCell className="font-mono text-xs">{token.prefix}…</TableCell><TableCell>{formatDate(token.last_used_at)}</TableCell><TableCell>{token.expires_at ? formatDate(token.expires_at) : "Never"}</TableCell><TableCell className="pr-5 text-right"><Button variant="ghost" size="sm" onClick={() => { if (window.confirm(`Revoke ${token.name}? Connected agents will stop working immediately.`)) auth.revokeToken(token.id).then(() => { setTokens((items) => (items ?? []).filter((item) => item.id !== token.id)); toast.success("Token revoked") }).catch((error) => toast.error(error instanceof Error ? error.message : "Could not revoke token")) }}><Trash2 data-icon="inline-start" />Revoke</Button></TableCell></TableRow>)}</TableBody></Table> : <Empty className="min-h-52"><EmptyHeader><EmptyMedia variant="icon"><Bot /></EmptyMedia><EmptyTitle>No agent tokens</EmptyTitle><EmptyDescription>Create one before connecting a CLI or MCP host.</EmptyDescription></EmptyHeader></Empty>}</div>
       </section>
     </main>
   )

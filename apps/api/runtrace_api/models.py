@@ -37,6 +37,7 @@ class Project(Base):
     experiments: Mapped[list[Experiment]] = relationship(back_populates="project", cascade="all, delete-orphan")
     runs: Mapped[list[Run]] = relationship(back_populates="project", cascade="all, delete-orphan")
     tag_definitions: Mapped[list[TagDefinition]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    memberships: Mapped[list[ProjectMembership]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
 class Identity(Base):
@@ -59,6 +60,22 @@ class Identity(Base):
     passkeys: Mapped[list[PasskeyCredential]] = relationship(back_populates="identity", cascade="all, delete-orphan")
     sessions: Mapped[list[AuthSession]] = relationship(back_populates="identity", cascade="all, delete-orphan")
     api_tokens: Mapped[list[ApiToken]] = relationship(back_populates="identity", cascade="all, delete-orphan")
+    project_memberships: Mapped[list[ProjectMembership]] = relationship(back_populates="identity", cascade="all, delete-orphan")
+
+
+class ProjectMembership(Base):
+    __tablename__ = "project_memberships"
+    __table_args__ = (UniqueConstraint("project_id", "identity_id"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("membership"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    identity_id: Mapped[str] = mapped_column(ForeignKey("identities.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(32), default="viewer", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+    project: Mapped[Project] = relationship(back_populates="memberships")
+    identity: Mapped[Identity] = relationship(back_populates="project_memberships")
 
 
 class PasskeyCredential(Base):
@@ -104,6 +121,19 @@ class ApiToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     identity: Mapped[Identity] = relationship(back_populates="api_tokens")
+    project_grants: Mapped[list[ApiTokenProject]] = relationship(back_populates="token", cascade="all, delete-orphan")
+
+
+class ApiTokenProject(Base):
+    __tablename__ = "api_token_projects"
+    __table_args__ = (UniqueConstraint("api_token_id", "project_id"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("tokenproject"))
+    api_token_id: Mapped[str] = mapped_column(ForeignKey("api_tokens.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+
+    token: Mapped[ApiToken] = relationship(back_populates="project_grants")
+    project: Mapped[Project] = relationship()
 
 
 class AuthCeremony(Base):

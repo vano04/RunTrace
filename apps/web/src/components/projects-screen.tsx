@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ArrowRight, BookOpen, FolderKanban, Search } from "lucide-react"
 import { toast } from "sonner"
 
@@ -18,6 +18,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Skeleton } from "@/components/ui/skeleton"
 import { runtrace } from "@/lib/api"
 import type { Project } from "@/lib/types"
+import { useAutoRefresh } from "@/lib/use-auto-refresh"
 import { cn } from "@/lib/utils"
 
 export function ProjectsScreen() {
@@ -25,12 +26,19 @@ export function ProjectsScreen() {
   const [query, setQuery] = useState("")
   const { compactRows } = useAppearance()
 
+  const load = useCallback(async () => {
+    try {
+      setProjects(await runtrace.projects())
+    } catch {}
+  }, [])
+
   useEffect(() => {
     runtrace.projects().then(setProjects).catch((error) => {
       toast.error(error instanceof Error ? error.message : "Could not load projects")
       setProjects([])
     })
   }, [])
+  useAutoRefresh(load)
 
   const filtered = useMemo(() => (projects ?? [])
     .filter((project) => `${project.name} ${project.slug} ${project.description}`.toLowerCase().includes(query.toLowerCase()))

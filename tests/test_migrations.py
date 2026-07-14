@@ -40,7 +40,8 @@ def test_existing_native_database_is_upgraded_to_current_schema(monkeypatch, tmp
     assert {"identities", "passkey_credentials", "auth_sessions", "auth_ceremonies", "api_tokens"}.issubset(tables)
     assert {"password_hash", "username"}.issubset(identity_columns)
     assert "name" not in identity_columns
-    assert revision == "0008_identity_usernames"
+    assert {"project_memberships", "api_token_projects"}.issubset(tables)
+    assert revision == "0009_project_access"
 
 
 def test_identity_names_are_migrated_to_unique_usernames(monkeypatch, tmp_path):

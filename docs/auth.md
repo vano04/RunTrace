@@ -63,3 +63,13 @@ expiry. Revocation is immediate.
 `RUNTRACE_DEV=true` is intentionally unauthenticated. It synthesizes owner
 access for every request. Do not expose this mode outside a trusted development
 machine.
+
+CLI, SDK, and MCP clients use the known development key `rt_runtrace_dev` for
+the default `http://localhost:8000` connection. The key is not a security
+boundary—development mode still permits requests without it—but it gives local
+clients the same deterministic bearer-token setup as normal mode. Save the
+connection for both the CLI and installed agent plugins with:
+
+```bash
+runtrace auth rt_runtrace_dev --base-url http://localhost:8000
+```

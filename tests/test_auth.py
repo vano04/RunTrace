@@ -6,7 +6,7 @@ from sqlalchemy import select
 from runtrace_api.auth import apply_owner_recovery_password
 from runtrace_api.config import settings
 from runtrace_api.database import SessionLocal
-from runtrace_api.models import ApiToken, AuthSession, Identity, now_utc
+from runtrace_api.models import ApiToken, AuthSession, Identity, ProjectMembership, now_utc
 
 
 def test_dev_mode_bypasses_authentication(fresh_database):
@@ -183,3 +183,63 @@ def test_api_token_authentication_and_revocation(fresh_database, monkeypatch):
 
     assert fresh_database.delete(f"/api/v1/auth/tokens/{token_id}", headers=headers).status_code == 204
     assert fresh_database.get("/api/v1/projects", headers=headers).status_code == 401
+
+
+def test_project_memberships_scoped_tokens_and_admin_token_control(fresh_database, monkeypatch):
+    monkeypatch.setattr(settings, "dev", False)
+    owner_session = "owner-project-session"
+    member_session = "member-project-session"
+    with SessionLocal() as session:
+        owner = Identity(username="owner", role="owner", status="active")
+        member = Identity(username="member", role="member", status="active")
+        session.add_all([owner, member])
+        session.flush()
+        member_id = member.id
+        session.add_all([
+            AuthSession(identity_id=owner.id, token_hash=hashlib.sha256(owner_session.encode()).hexdigest(), expires_at=now_utc() + timedelta(hours=1)),
+            AuthSession(identity_id=member.id, token_hash=hashlib.sha256(member_session.encode()).hexdigest(), expires_at=now_utc() + timedelta(hours=1)),
+        ])
+        session.commit()
+
+    fresh_database.cookies.set("runtrace_session", owner_session)
+    first = fresh_database.post("/api/v1/projects", json={"name": "First", "slug": "first"}).json()
+    second = fresh_database.post("/api/v1/projects", json={"name": "Second", "slug": "second"}).json()
+    granted = fresh_database.post("/api/v1/auth/projects/first/members", json={"identity_id": member_id, "role": "viewer"})
+    assert granted.status_code == 201
+    assert granted.json()["role"] == "viewer"
+
+    fresh_database.cookies.clear()
+    fresh_database.cookies.set("runtrace_session", member_session)
+    assert {project["id"] for project in fresh_database.get("/api/v1/projects").json()} == {first["id"]}
+    assert fresh_database.get("/api/v1/projects/first").status_code == 200
+    assert fresh_database.get("/api/v1/projects/second").status_code == 403
+    assert fresh_database.post("/api/v1/projects/first/experiments", json={"title": "No", "hypothesis": "viewer"}).status_code == 403
+
+    fresh_database.cookies.clear()
+    fresh_database.cookies.set("runtrace_session", owner_session)
+    assert fresh_database.patch(f"/api/v1/auth/projects/first/members/{member_id}", json={"role": "editor"}).status_code == 200
+
+    fresh_database.cookies.clear()
+    fresh_database.cookies.set("runtrace_session", member_session)
+    assert fresh_database.post("/api/v1/projects/first/experiments", json={"title": "Allowed", "hypothesis": "editor"}).status_code == 201
+    created = fresh_database.post("/api/v1/auth/tokens", json={"name": "First only", "project_ids": [first["id"]]})
+    assert created.status_code == 201
+    secret = created.json()["token"]
+    token_id = created.json()["api_token"]["id"]
+    assert [project["id"] for project in created.json()["api_token"]["projects"]] == [first["id"]]
+
+    fresh_database.cookies.clear()
+    headers = {"Authorization": f"Bearer {secret}"}
+    assert fresh_database.get("/api/v1/projects/first", headers=headers).status_code == 200
+    assert fresh_database.get("/api/v1/projects/second", headers=headers).status_code == 403
+
+    fresh_database.cookies.set("runtrace_session", owner_session)
+    all_tokens = fresh_database.get("/api/v1/auth/tokens").json()
+    listed = next(token for token in all_tokens if token["id"] == token_id)
+    assert listed["identity"]["username"] == "member"
+    assert fresh_database.delete(f"/api/v1/auth/tokens/{token_id}").status_code == 204
+    fresh_database.cookies.clear()
+    assert fresh_database.get("/api/v1/projects/first", headers=headers).status_code == 401
+
+    with SessionLocal() as session:
+        assert session.scalar(select(ProjectMembership).where(ProjectMembership.project_id == second["id"], ProjectMembership.identity_id == member_id)) is None

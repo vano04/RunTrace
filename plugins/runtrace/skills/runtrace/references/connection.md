@@ -20,3 +20,5 @@ export RUNTRACE_API_TOKEN="rt_..."
 Never commit the token.
 
 For a local development instance, the API URL defaults to `http://localhost:8000`. Normal production mode requires a saved or environment-provided token; unauthenticated development mode must not be exposed to a network.
+
+The local development client key is `rt_runtrace_dev`. Save it with `runtrace auth rt_runtrace_dev --base-url http://localhost:8000`; the MCP server rereads the saved credential on each request, so Codex and Claude do not require shell exports.

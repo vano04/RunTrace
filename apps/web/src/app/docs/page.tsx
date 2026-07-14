@@ -38,10 +38,9 @@ export default function DocsPage() {
 
 # Seeded development preview
 RUNTRACE_DEV=true docker compose up --build`}</Code>
-          <p>For native Python development, install the workspace package and point clients at the API:</p>
+          <p>For native Python development, install the workspace package and save the known local connection once:</p>
           <Code>{`uv sync --all-extras
-export RUNTRACE_BASE_URL=http://localhost:8000
-export RUNTRACE_API_TOKEN=rt_...`}</Code>
+uv run runtrace auth rt_runtrace_dev --base-url http://localhost:8000`}</Code>
         </DocSection>
 
         <DocSection id="concepts" title="Core concepts" icon={Database}>
@@ -89,7 +88,7 @@ RUNTRACE_EVENT level=info message="checkpoint saved"`}</Code>
 
         <DocSection id="mcp" title="MCP server" icon={Braces}>
           <p>Run the stdio server to let coding agents retrieve context, propose and claim work, log live evidence, and finish runs without custom integration code.</p>
-          <Code>{`uvx --from 'runtrace-ai[mcp]==0.1.2' runtrace-mcp
+          <Code>{`uvx --from 'runtrace-ai[mcp]==0.1.3' runtrace-mcp
 
 # Typical agent sequence
 get_project_context({ project: "dense-optimizer" })
@@ -101,8 +100,10 @@ finish_run({ run_id: "run_...", disposition: "kept", result_summary: "...", conc
         </DocSection>
 
         <DocSection id="plugins" title="Codex and Claude Code" icon={Plug}>
-          <p>Install the repository marketplace from either CLI. The plugin bundles the RunTrace skill and starts the authenticated MCP server with <code className="rounded bg-muted px-1.5 py-0.5">uvx</code>.</p>
-          <Code>{`# Codex app and CLI
+          <p>Install the PyPI tool and repository marketplace from either CLI. The plugin bundles the RunTrace skill, starts the authenticated MCP server with <code className="rounded bg-muted px-1.5 py-0.5">uvx</code>, and rereads the CLI&apos;s saved credential on every request.</p>
+          <Code>{`uv tool install runtrace-ai
+
+# Codex app and CLI
 codex plugin marketplace add vano04/RunTrace --ref master
 codex plugin add runtrace@runtrace
 
@@ -112,8 +113,11 @@ claude plugin install runtrace@runtrace --scope user
 
 # If the RunTrace CLI is already installed
 runtrace integrations install codex
-runtrace integrations install claude`}</Code>
-          <p>Create a token under <strong className="text-foreground">Access → Your agent tokens</strong>, then export <code className="rounded bg-muted px-1.5 py-0.5">RUNTRACE_BASE_URL</code> and <code className="rounded bg-muted px-1.5 py-0.5">RUNTRACE_API_TOKEN</code> before starting the agent host.</p>
+runtrace integrations install claude
+
+# Local development; use an Access token instead for a normal instance
+runtrace auth rt_runtrace_dev --base-url http://localhost:8000`}</Code>
+          <p>For a normal instance, create a token under <strong className="text-foreground">Access → Your agent tokens</strong> and pass it to <code className="rounded bg-muted px-1.5 py-0.5">runtrace auth</code>. Codex and Claude then use the saved connection without shell exports or a restart.</p>
         </DocSection>
 
         <DocSection id="http" title="HTTP API and live streams" icon={Radio}>

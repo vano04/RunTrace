@@ -8,6 +8,7 @@ from typing import Any
 
 
 DEFAULT_BASE_URL = "http://localhost:8000"
+DEFAULT_DEV_API_TOKEN = "rt_runtrace_dev"
 
 
 def credentials_path() -> Path:
@@ -48,6 +49,7 @@ def resolve_connection(
         or os.getenv("RUNTRACE_API_TOKEN")
         or os.getenv("RUNTRACE_API_KEY")
         or saved.get("api_token")
+        or (DEFAULT_DEV_API_TOKEN if resolved_base_url.rstrip("/") == DEFAULT_BASE_URL else None)
     )
     return resolved_base_url.rstrip("/"), resolved_api_token
 

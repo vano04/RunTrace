@@ -6,7 +6,13 @@ RunTrace clients connect to a deployed RunTrace API. Normal mode requires an age
 runtrace auth "rt_..." --base-url "https://runtrace.example.com"
 ```
 
-The command validates the token before saving it to `~/.config/runtrace/credentials.json` with user-only permissions. The MCP server rereads this file for each request, so an already-running Codex tool can use the new key immediately. `XDG_CONFIG_HOME` is respected.
+The unauthenticated local development stack has a stable client key so the same setup is reproducible:
+
+```bash
+runtrace auth rt_runtrace_dev --base-url http://localhost:8000
+```
+
+The command validates the token before saving it to `~/.config/runtrace/credentials.json` with user-only permissions. The MCP server rereads this file for each request, so an already-running Codex or Claude tool can use the new key immediately without exporting connection variables or restarting the host. `XDG_CONFIG_HOME` is respected.
 
 To avoid placing the key in shell history, pass `-` and enter or pipe the key on standard input:
 
@@ -65,8 +71,10 @@ with run("my-project", "Test the new scheduler") as tracked:
 ## Codex plugin
 
 ```bash
+uv tool install runtrace-ai
 codex plugin marketplace add vano04/RunTrace --ref master
 codex plugin add runtrace@runtrace
+runtrace auth rt_runtrace_dev --base-url http://localhost:8000
 ```
 
 Or run `runtrace integrations install codex`, then run `runtrace auth`. The plugin launches MCP with `uvx`, so it needs no repository clone or persistent Python environment.
@@ -74,8 +82,10 @@ Or run `runtrace integrations install codex`, then run `runtrace auth`. The plug
 ## Claude Code plugin
 
 ```bash
+uv tool install runtrace-ai
 claude plugin marketplace add vano04/RunTrace
 claude plugin install runtrace@runtrace --scope user
+runtrace auth rt_runtrace_dev --base-url http://localhost:8000
 ```
 
 Or run `runtrace integrations install claude`, then run `runtrace auth`.
@@ -85,7 +95,7 @@ Or run `runtrace integrations install claude`, then run `runtrace auth`.
 Any stdio MCP host can run:
 
 ```bash
-uvx --from 'runtrace-ai[mcp]==0.1.2' runtrace-mcp
+uvx --from 'runtrace-ai[mcp]==0.1.3' runtrace-mcp
 ```
 
 The host needs `uv` plus either credentials saved by `runtrace auth` or the `RUNTRACE_BASE_URL` and `RUNTRACE_API_TOKEN` environment variables. Its first launch needs network access to GitHub and the Python package index.

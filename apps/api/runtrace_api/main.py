@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import and_, delete, desc, func, or_, select, update
@@ -28,6 +28,7 @@ from .models import (
     ExclusionVersion,
     Experiment,
     MetricDefinition,
+    ProjectMembership,
     ProgramVersion,
     Project,
     Run,
@@ -83,7 +84,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="RunTrace API",
-    version="0.1.2",
+    version="0.1.3",
     description="Project-scoped experiment memory and supervision for autonomous research agents.",
     lifespan=lifespan,
 )
@@ -178,8 +179,17 @@ def get_run(session: Session, identifier: str) -> Run:
     item = session.scalar(
         select(Run)
         .options(selectinload(Run.metrics), selectinload(Run.events), selectinload(Run.parameters), selectinload(Run.artifacts))
-        .where(or_(Run.id == identifier, Run.display_id == identifier), Run.deleted_at.is_(None))
+        .where(Run.id == identifier, Run.deleted_at.is_(None))
     )
+    if not item:
+        matches = session.scalars(
+            select(Run)
+            .options(selectinload(Run.metrics), selectinload(Run.events), selectinload(Run.parameters), selectinload(Run.artifacts))
+            .where(Run.display_id == identifier, Run.deleted_at.is_(None))
+        ).all()
+        if len(matches) > 1:
+            raise HTTPException(409, "Run display ID is ambiguous; use the full run ID")
+        item = matches[0] if matches else None
     if not item:
         raise HTTPException(404, "Run not found")
     return item
@@ -396,12 +406,15 @@ def health() -> dict[str, str]:
 
 
 @app.post("/api/v1/projects", response_model=ProjectRead, status_code=201)
-def create_project(body: ProjectCreate, session: Session = Depends(get_db)) -> Project:
+def create_project(body: ProjectCreate, request: Request, session: Session = Depends(get_db)) -> Project:
     if session.scalar(select(Project.id).where(Project.slug == body.slug)):
         raise HTTPException(409, "Project slug already exists")
     project = Project(**body.model_dump())
     session.add(project)
     session.flush()
+    principal = request.state.identity
+    if not principal.dev:
+        session.add(ProjectMembership(project_id=project.id, identity_id=principal.id, role="owner"))
     session.add_all([
         TagDefinition(project_id=project.id, name="early stop", rule_key="autoresearch_early_stop"),
         TagDefinition(project_id=project.id, name="long run", rule_key="autoresearch_long_run"),
@@ -414,8 +427,14 @@ def create_project(body: ProjectCreate, session: Session = Depends(get_db)) -> P
 
 
 @app.get("/api/v1/projects")
-def list_projects(session: Session = Depends(get_db)) -> list[dict]:
-    projects = session.scalars(select(Project).order_by(Project.name)).all()
+def list_projects(request: Request, session: Session = Depends(get_db)) -> list[dict]:
+    principal = request.state.identity
+    query = select(Project).order_by(Project.name)
+    if not principal.dev and principal.role not in {"owner", "admin"}:
+        query = query.join(ProjectMembership).where(ProjectMembership.identity_id == principal.id)
+    if principal.token_project_ids is not None:
+        query = query.where(Project.id.in_(principal.token_project_ids))
+    projects = session.scalars(query).all()
     result = []
     for project in projects:
         active = session.scalar(select(func.count()).select_from(Run).where(Run.project_id == project.id, Run.lifecycle == "running")) or 0
@@ -431,8 +450,13 @@ def read_project(project: str, session: Session = Depends(get_db)) -> Project:
 
 
 @app.delete("/api/v1/projects/{project}", status_code=204)
-def delete_project(project: str, session: Session = Depends(get_db)) -> None:
+def delete_project(project: str, request: Request, session: Session = Depends(get_db)) -> None:
     current = get_project(session, project)
+    principal = request.state.identity
+    if not principal.dev and principal.role not in {"owner", "admin"}:
+        role = session.scalar(select(ProjectMembership.role).where(ProjectMembership.project_id == current.id, ProjectMembership.identity_id == principal.id))
+        if role != "owner":
+            raise HTTPException(403, "Project owner access is required")
     run_ids = list(session.scalars(select(Run.id).where(Run.project_id == current.id)))
     session.delete(current)
     session.commit()
@@ -1002,14 +1026,22 @@ def search_records(session: Session, body: SearchRequest) -> list[dict]:
 
 
 @app.post("/api/v1/search")
-def search(body: SearchRequest, session: Session = Depends(get_db)) -> dict:
+def search(body: SearchRequest, request: Request, session: Session = Depends(get_db)) -> dict:
+    current = get_project(session, body.project)
+    principal = request.state.identity
+    if principal.token_project_ids is not None and current.id not in principal.token_project_ids:
+        raise HTTPException(403, "This API token is not authorized for this project")
+    if not principal.dev and principal.role not in {"owner", "admin"} and not session.scalar(select(ProjectMembership.id).where(ProjectMembership.project_id == current.id, ProjectMembership.identity_id == principal.id)):
+        raise HTTPException(403, "You do not have access to this project")
     results = search_records(session, body)
     return {"query": body.query, "project": body.project, "count": len(results), "results": results}
 
 
 @app.get("/api/v1/projects/{project}/search")
 def search_get(project: str, q: str = "", include_archived: bool = False, include_tag: list[str] = Query(default=[]), exclude_tag: list[str] = Query(default=[]), limit: int = Query(10, ge=1, le=100), session: Session = Depends(get_db)) -> dict:
-    return search(SearchRequest(project=project, query=q, include_archived=include_archived, include_tags=include_tag, exclude_tags=exclude_tag, limit=limit), session)
+    body = SearchRequest(project=project, query=q, include_archived=include_archived, include_tags=include_tag, exclude_tags=exclude_tag, limit=limit)
+    results = search_records(session, body)
+    return {"query": body.query, "project": body.project, "count": len(results), "results": results}
 
 
 @app.get("/api/v1/projects/{project}/context")

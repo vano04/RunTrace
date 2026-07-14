@@ -44,7 +44,7 @@ def auth(
         raise typer.BadParameter("RunTrace rejected this API key")
 
     path = save_credentials(resolved_base_url, api_key)
-    typer.echo(f"Authenticated with {resolved_base_url}. Credentials saved to {path}")
+    typer.echo(f"Authenticated with {resolved_base_url}. Credentials saved to {path}; installed MCP plugins will use them automatically.")
 
 
 @app.command()

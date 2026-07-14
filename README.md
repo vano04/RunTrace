@@ -43,7 +43,7 @@ To deploy the published GitHub Container packages instead of building locally:
 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
 ```
 
-The images are `ghcr.io/vano04/runtrace:0.1.2` for the API/CLI/MCP runtime and `ghcr.io/vano04/runtrace-web:0.1.2` for the dashboard. Set `RUNTRACE_VERSION` to select another release.
+The images are `ghcr.io/vano04/runtrace:0.1.3` for the API/CLI/MCP runtime and `ghcr.io/vano04/runtrace-web:0.1.3` for the dashboard. Set `RUNTRACE_VERSION` to select another release.
 
 Useful endpoints:
 
@@ -58,6 +58,8 @@ RUNTRACE_DEV=true docker compose up --build
 ```
 
 `RUNTRACE_DEV=true` disables authentication. Never enable it on a network-reachable deployment. Demo data is inserted only when the database has no projects.
+
+Local clients use the known development key `rt_runtrace_dev`. The API remains unauthenticated in this mode, but using one stable client credential makes the CLI and agent plugins follow the same connection path as a normal deployment.
 
 To deliberately erase the Compose volumes and recreate the demo:
 
@@ -106,7 +108,13 @@ In normal mode, create a token at **Access → Your agent tokens**, then authent
 runtrace auth rt_... --base-url https://runtrace.example.com
 ```
 
-This validates the key and saves it in a private user-level credential file. `RUNTRACE_BASE_URL` and `RUNTRACE_API_TOKEN` remain supported and take precedence over saved credentials. The CLI can then retrieve context, search evidence, and track a command:
+For the local development stack, use its known key instead:
+
+```bash
+runtrace auth rt_runtrace_dev --base-url http://localhost:8000
+```
+
+This validates the key and saves it in a private user-level credential file. The MCP server rereads that file for every tool call, so Codex and Claude use the authenticated connection without shell exports or a host restart. `RUNTRACE_BASE_URL` and `RUNTRACE_API_TOKEN` remain supported and take precedence over saved credentials. The CLI can then retrieve context, search evidence, and track a command:
 
 ```bash
 runtrace context <project-slug>
@@ -119,7 +127,7 @@ runtrace exec --project <project-slug> --name "new variation" \
 Run the MCP server over stdio without a persistent install:
 
 ```bash
-uvx --from 'runtrace-ai[mcp]==0.1.2' runtrace-mcp
+uvx --from 'runtrace-ai[mcp]==0.1.3' runtrace-mcp
 ```
 
 ## Codex and Claude Code plugins
@@ -134,7 +142,7 @@ claude plugin marketplace add vano04/RunTrace
 claude plugin install runtrace@runtrace --scope user
 ```
 
-If the RunTrace CLI is already installed, `runtrace integrations install codex` or `runtrace integrations install claude` performs the same setup. Export the connection variables before starting the agent host. See [the integration guide](docs/integrations.md) for direct MCP and Python examples.
+If the RunTrace CLI is already installed, `runtrace integrations install codex` or `runtrace integrations install claude` performs the same setup. Run `runtrace auth` once before or after installing the plugin; the plugin uses the saved connection automatically. See [the integration guide](docs/integrations.md) for direct MCP and Python examples.
 
 ## Configuration
 

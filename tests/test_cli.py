@@ -73,6 +73,7 @@ def test_cli_auth_validates_and_saves_credentials(monkeypatch, tmp_path):
     assert saved["base_url"] == "https://trace.example"
     assert saved["api_key"] == "rt_secret"
     assert "rt_secret" not in result.stdout
+    assert "MCP plugins will use them automatically" in result.stdout
 
 
 def test_cli_auth_rejects_invalid_key_without_saving(monkeypatch):
