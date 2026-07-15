@@ -58,3 +58,24 @@ def test_sdk_context_manager_crashes_run_on_exception(fresh_database):
     detail = fresh_database.get(f"/api/v1/runs/{tracked.id}").json()
     assert detail["lifecycle"] == "crashed"
     assert detail["result_summary"] == "boom"
+
+
+def test_sdk_attaches_to_runtrace_run_id_without_creating_a_duplicate(fresh_database, monkeypatch):
+    client = RunTrace(base_url="http://testserver", strict=True)
+    client.client.close()
+    client.client = fresh_database
+    created = fresh_database.post(
+        "/api/v1/projects/dense-optimizer/runs",
+        json={"name": "Created by MCP", "hypothesis": "One execution has one run"},
+    ).json()
+    monkeypatch.setenv("RUNTRACE_RUN_ID", created["id"])
+
+    with client.run("dense-optimizer", "SDK should attach") as tracked:
+        assert tracked.id == created["id"]
+        tracked.log_metric("loss", 3.1)
+        tracked.finish("success", "loss 3.1", "Attached without duplication")
+
+    runs = fresh_database.get("/api/v1/projects/dense-optimizer/runs").json()
+    assert len([run for run in runs if run["id"] == created["id"]]) == 1
+    detail = fresh_database.get(f"/api/v1/runs/{created['id']}").json()
+    assert detail["metrics"]["loss"]["latest"] == 3.1

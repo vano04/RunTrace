@@ -68,6 +68,16 @@ with run("my-project", "Test the new scheduler") as tracked:
     tracked.finish("kept", "score improved", "Keep the scheduler")
 ```
 
+### One execution, one run
+
+Choose one component to create the run. If an agent creates it through MCP but the child process already uses the Python SDK, pass the returned ID to the process:
+
+```bash
+RUNTRACE_RUN_ID=run_... python train.py
+```
+
+The SDK attaches to that running record and refuses inaccessible, closed, or cross-project IDs. Do not create one run through MCP and a second through the SDK or `runtrace exec` for the same process.
+
 ## Codex plugin
 
 ```bash

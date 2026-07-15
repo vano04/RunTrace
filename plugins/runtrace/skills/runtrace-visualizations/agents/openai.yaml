@@ -1,0 +1,4 @@
+interface:
+  display_name: "RunTrace Visualizations"
+  short_description: "Build dashboard and run-result visuals"
+  default_prompt: "Use $runtrace-visualizations to build the appropriate RunTrace visualization for this data."

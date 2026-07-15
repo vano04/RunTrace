@@ -20,7 +20,7 @@ class StrictModel(BaseModel):
 class RTVisDataset(StrictModel):
     source: Literal["inline", "runtrace"] = "inline"
     rows: list[dict[str, Any]] = Field(default_factory=list, max_length=MAX_DATASET_ROWS)
-    query: Literal["runs", "experiments"] | None = None
+    query: Literal["runs", "experiments", "run_metrics"] | None = None
     filters: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -139,13 +139,15 @@ def normalized_spec(spec: RTVisSpec) -> dict[str, Any]:
     }
 
 
-def visualization_guide() -> dict[str, Any]:
+def visualization_guide(saved_visualizations: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     return {
         "format": "RTVis",
         "version": 1,
         "schema_url": RTVIS_SCHEMA_URL,
         "json_schema": RTVisSpec.model_json_schema(by_alias=True),
         "rules": [
+            "Check existing_dashboard before authoring. Do not recreate a built-in or saved visualization unless the user explicitly asks to replace it.",
+            "Dashboard visualizations are project-level tracking views. Use the separate experiment result visualization guide for per-run result display types.",
             "Use shadcn-backed card, table, badge, and layout nodes when they fit.",
             "Use chart nodes for data marks; RunTrace applies project theme tokens automatically.",
             "Use a javascript node only when the trusted nodes cannot express the interaction.",
@@ -153,11 +155,24 @@ def visualization_guide() -> dict[str, Any]:
             "Use the provided card, btn, badge, input, select, muted, and grid classes to mimic shadcn styling inside JavaScript widgets.",
             "Keep the first render useful and add only interactions represented by the schema.",
         ],
+        "existing_dashboard": {
+            "built_ins": [
+                {"id": "autoresearch_progress", "location": "project dashboard", "description": "Interactive best-so-far percentage improvement over time with metric, window, and tag filters."},
+                {"id": "baseline_summary", "location": "project dashboard", "description": "Current baseline run, primary metric, connected worker count, and registry status."},
+                {"id": "experiment_queue", "location": "project dashboard", "description": "Shared proposed, claimed, and running experiment queue with lifecycle counts."},
+                {"id": "completed_history", "location": "project dashboard", "description": "Recent completed and crashed runs with branch, result, and disposition."},
+                {"id": "run_curve", "location": "run details", "description": "Interactive metric curve compared with the current baseline."},
+                {"id": "run_metric_summary", "location": "run details", "description": "Latest value, point count, and range for every recorded metric, including timing and scalar modes."},
+                {"id": "run_evidence", "location": "run details", "description": "Configuration, events, artifacts, conclusion, commit, and branch evidence."},
+            ],
+            "saved_custom_visualizations": saved_visualizations or [],
+            "authoring_rule": "Create a dashboard widget only for additional cross-run or project-level tracking not covered above. Per-run result shapes belong to experiment result visualization types.",
+        },
         "supported_nodes": ["stack", "grid", "card", "metric", "table", "chart", "badge", "text", "separator", "javascript"],
         "supported_charts": ["line", "area", "bar", "scatter", "heatmap"],
         "dataset_sources": {
             "inline": {"description": "Portable rows embedded in the document", "max_rows": MAX_DATASET_ROWS},
-            "runtrace": {"queries": ["runs", "experiments"], "description": "Live project-scoped data resolved by RunTrace"},
+            "runtrace": {"queries": ["runs", "experiments"], "description": "Live project-scoped data resolved by RunTrace. Experiment result types use their separate guide and run_metrics query."},
         },
         "theme_tokens": ["background", "foreground", "card", "muted", "border", "primary", "chart-1", "chart-2", "chart-3", "chart-4", "chart-5"],
         "javascript_runtime": {

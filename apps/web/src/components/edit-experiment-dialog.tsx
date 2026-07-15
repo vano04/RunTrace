@@ -11,8 +11,9 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { runtrace } from "@/lib/api"
+import type { ExperimentResultVisualizationType } from "@/lib/types"
 
-const metricModes = ["curve", "timings", "scalar", "none"] as const
+const fallbackResultTypes = [{ key: "curve", name: "Curve" }, { key: "timings", name: "Timings" }, { key: "scalar", name: "Scalar" }, { key: "bar", name: "Bar chart" }, { key: "none", name: "None" }]
 
 export function EditExperimentDialog({ slug, id, open, onOpenChange, onUpdated }: {
   slug: string
@@ -28,11 +29,12 @@ export function EditExperimentDialog({ slug, id, open, onOpenChange, onUpdated }
   const [reasoning, setReasoning] = useState("")
   const [details, setDetails] = useState("")
   const [metricMode, setMetricMode] = useState("curve")
+  const [resultTypes, setResultTypes] = useState<ExperimentResultVisualizationType[]>([])
 
   useEffect(() => {
     if (!open) return
     let active = true
-    runtrace.experiment(slug, id).then((item) => {
+    Promise.all([runtrace.experiment(slug, id), runtrace.resultVisualizationTypes(slug)]).then(([item, types]) => {
       if (!active) return
       setExperiment(item)
       setTitle(item.title)
@@ -40,6 +42,7 @@ export function EditExperimentDialog({ slug, id, open, onOpenChange, onUpdated }
       setReasoning(item.reasoning)
       setDetails(item.implementation_details)
       setMetricMode(item.metric_mode)
+      setResultTypes(types)
     }).catch((error) => {
       if (active) toast.error(error instanceof Error ? error.message : "Could not load experiment")
     })
@@ -86,7 +89,7 @@ export function EditExperimentDialog({ slug, id, open, onOpenChange, onUpdated }
             <Field><FieldLabel>Result display</FieldLabel>
               <Select value={metricMode} onValueChange={(value) => setMetricMode(value ?? "curve")}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectGroup>{metricModes.map((value) => <SelectItem key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</SelectItem>)}</SelectGroup></SelectContent>
+                <SelectContent><SelectGroup>{(resultTypes.length ? resultTypes : fallbackResultTypes).map((item) => <SelectItem key={item.key} value={item.key}>{item.name}</SelectItem>)}</SelectGroup></SelectContent>
               </Select>
             </Field>
           </FieldGroup>

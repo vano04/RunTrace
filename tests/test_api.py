@@ -144,6 +144,34 @@ def test_closed_loop_run_is_retrievable_as_new_evidence(fresh_database):
     assert result["decision_changed"].startswith("Reduced approximation")
 
 
+def test_project_slug_lookup_is_case_insensitive(fresh_database):
+    response = fresh_database.get("/api/v1/projects/DENSE-OPTIMIZER/context")
+    assert response.status_code == 200
+    assert response.json()["project"]["slug"] == "dense-optimizer"
+
+
+def test_run_inherits_custom_result_mode_from_claimed_experiment(fresh_database):
+    spec = {"version": 1, "title": "Methods", "datasets": {"metrics": {"source": "runtrace", "query": "run_metrics"}}, "view": {"type": "chart", "chart": "bar", "dataset": "metrics", "x": "name", "y": "value"}}
+    registered = fresh_database.post("/api/v1/projects/dense-optimizer/result-visualizations", json={"key": "called-methods", "name": "Called methods", "spec": spec})
+    assert registered.status_code == 201, registered.text
+    updated = fresh_database.patch(
+        "/api/v1/projects/dense-optimizer/experiments/EXP-023",
+        json={"metric_mode": "called-methods"},
+    )
+    assert updated.status_code == 200, updated.text
+    claimed = fresh_database.post(
+        "/api/v1/projects/dense-optimizer/experiments/EXP-023/claim",
+        json={"worker_id": "compiler-profiler"},
+    )
+    assert claimed.status_code == 200, claimed.text
+    created = fresh_database.post(
+        "/api/v1/projects/dense-optimizer/runs",
+        json={"name": "Profile compiler calls", "experiment_id": "EXP-023"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["metric_mode"] == "called-methods"
+
+
 def test_artifact_name_cannot_escape_storage_root(fresh_database):
     created = fresh_database.post("/api/v1/projects/dense-optimizer/runs", json={"name": "Artifact test"}).json()
     response = fresh_database.post(

@@ -8,7 +8,7 @@ from .rtvis import RTVisSpec
 
 Lifecycle = Literal["proposed", "pending", "running", "completed", "crashed"]
 Disposition = Literal["kept", "discarded", "undecided"]
-MetricMode = Literal["curve", "timings", "scalar", "none"]
+MetricMode = str
 
 
 class ORMModel(BaseModel):
@@ -241,4 +241,12 @@ class VisualizationUpdate(BaseModel):
 class VisualizationImport(BaseModel):
     document: dict[str, Any]
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    created_by: str = Field(default="agent", min_length=1, max_length=200)
+
+
+class ResultVisualizationTypeCreate(BaseModel):
+    key: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=1_000)
+    spec: RTVisSpec
     created_by: str = Field(default="agent", min_length=1, max_length=200)

@@ -31,7 +31,7 @@ export interface Experiment {
   source_model: string | null
   lifecycle: Lifecycle
   disposition: Disposition
-  metric_mode: "curve" | "timings" | "scalar" | "none"
+  metric_mode: string
   priority: number
   claimed_by: string | null
   claimed_at: string | null
@@ -77,6 +77,7 @@ export interface Run {
   parameters?: Record<string, unknown>
   events?: Array<{ id: number; message: string; level: string; event_type: string | null; metadata?: Record<string, unknown>; timestamp: string }>
   artifacts?: Artifact[]
+  result_visualization?: ExperimentResultVisualization | null
 }
 
 export interface Artifact {
@@ -153,6 +154,25 @@ export interface Visualization {
   resolved_datasets: Record<string, Array<Record<string, unknown>>>
 }
 
+export interface ExperimentResultVisualizationType {
+  id: string | null
+  key: string
+  name: string
+  description: string
+  spec_version?: number
+  spec: RTVisSpec | null
+  builtin: boolean
+  created_by?: string
+}
+
+export interface ExperimentResultVisualization {
+  key: string
+  name: string
+  description: string
+  spec: RTVisSpec
+  resolved_datasets: Record<string, Array<Record<string, unknown>>>
+}
+
 export interface VisualizationDocument {
   format: "runtrace-visualization"
   version: 1
@@ -174,6 +194,7 @@ export interface Dashboard {
   available_tags: string[]
   tag_definitions: TagDefinition[]
   visualizations: Visualization[]
+  result_visualization_types: ExperimentResultVisualizationType[]
 }
 
 export interface TagDefinition {

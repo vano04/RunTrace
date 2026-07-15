@@ -21,9 +21,8 @@
     "privacyPolicyURL": "https://github.com/vano04/RunTrace/blob/master/docs/privacy.md",
     "termsOfServiceURL": "https://github.com/vano04/RunTrace/blob/master/docs/plugin-terms.md",
     "defaultPrompt": [
-      "Review prior RunTrace evidence before starting this experiment",
-      "Record this experiment and its outcome in RunTrace",
-      "Find related failed or successful runs in RunTrace",
+      "Set up this repository for reliable RunTrace experiment tracking",
+      "Review prior evidence, run one experiment, and record its outcome in RunTrace",
       "Generate a visualization for this data in RunTrace"
     ],
     "brandColor": "#22C55E"

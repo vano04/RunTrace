@@ -1,4 +1,4 @@
-import type { Dashboard, Experiment, ProgressData, Project, RTVisSpec, Run, SearchResult, TagDefinition, Visualization, VisualizationDocument } from "@/lib/types"
+import type { Dashboard, Experiment, ExperimentResultVisualizationType, ProgressData, Project, RTVisSpec, Run, SearchResult, TagDefinition, Visualization, VisualizationDocument } from "@/lib/types"
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -76,6 +76,7 @@ export const runtrace = {
   updateTag: (slug: string, id: string, name: string) => api<TagDefinition>(`/api/v1/projects/${slug}/tags/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
   deleteTag: (slug: string, id: string) => api<void>(`/api/v1/projects/${slug}/tags/${id}`, { method: "DELETE" }),
   visualizationGuide: (slug: string) => api<Record<string, unknown>>(`/api/v1/projects/${slug}/visualizations/guide`),
+  resultVisualizationTypes: (slug: string) => api<ExperimentResultVisualizationType[]>(`/api/v1/projects/${slug}/result-visualizations`),
   visualizations: (slug: string) => api<Visualization[]>(`/api/v1/projects/${slug}/visualizations`),
   createVisualization: (slug: string, body: { name: string; description?: string; spec: RTVisSpec }) =>
     api<Visualization>(`/api/v1/projects/${slug}/visualizations`, { method: "POST", body: JSON.stringify(body) }),

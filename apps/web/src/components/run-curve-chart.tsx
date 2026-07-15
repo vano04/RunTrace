@@ -1,5 +1,7 @@
 "use client"
 
+import { useState, type KeyboardEvent } from "react"
+
 import type { Run } from "@/lib/types"
 
 type CurvePoint = { value: number; step: number | null; timestamp: string }
@@ -17,6 +19,8 @@ function pathFor(points: CurvePoint[], x: (point: CurvePoint, index: number) => 
 }
 
 export function RunCurveChart({ run, baseline, metric }: { run: Run; baseline: Run | null; metric: string }) {
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [pinned, setPinned] = useState<string | null>(null)
   const runPoints = getPoints(run, metric)
   const baselinePoints = getPoints(baseline, metric)
   const points = [...runPoints, ...baselinePoints]
@@ -50,6 +54,29 @@ export function RunCurveChart({ run, baseline, metric }: { run: Run; baseline: R
   const lastRunPoint = runPoints.at(-1)
   const lastBaselinePoint = baselinePoints.at(-1)
   const finalDelta = lastRunPoint && lastBaselinePoint ? lastRunPoint.value - lastBaselinePoint.value : null
+  const activeKey = hovered ?? pinned
+  const [activeSource, activeIndexText] = activeKey?.split(":") ?? []
+  const activeIndex = Number(activeIndexText)
+  const activePoints = activeSource === "baseline" ? baselinePoints : runPoints
+  const activePoint = Number.isInteger(activeIndex) ? activePoints[activeIndex] : null
+  const activeX = activePoint ? x(activePoint, activeIndex) : 0
+  const activeY = activePoint ? y(activePoint.value) : 0
+  const detailWidth = 210, detailHeight = 88, detailGap = 14
+  const detailX = activeX + detailWidth + detailGap <= width - padRight ? activeX + detailGap : activeX - detailWidth - detailGap
+  const detailY = Math.min(height - padBottom - detailHeight, Math.max(4, activeY - detailHeight / 2))
+  const pointEvents = (key: string) => ({
+    onMouseEnter: () => setHovered(key),
+    onMouseLeave: () => setHovered(null),
+    onFocus: () => setHovered(key),
+    onBlur: () => setHovered(null),
+    onClick: () => setPinned(pinned === key ? null : key),
+    onKeyDown: (event: KeyboardEvent<SVGGElement>) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault()
+        setPinned(pinned === key ? null : key)
+      }
+    },
+  })
 
   return (
     <div className="overflow-x-auto" data-testid="run-curve-comparison">
@@ -70,10 +97,17 @@ export function RunCurveChart({ run, baseline, metric }: { run: Run; baseline: R
         {tickSteps.map((step) => <g key={step}><line x1={padLeft + (step / maxStep) * plotWidth} x2={padLeft + (step / maxStep) * plotWidth} y1={padTop} y2={height - padBottom} className="stroke-border/60" strokeDasharray="3 5" /><text x={padLeft + (step / maxStep) * plotWidth} y={height - 14} textAnchor="middle" className="fill-muted-foreground text-[10px] font-mono">{step.toLocaleString()}</text></g>)}
         {baselinePath ? <path d={baselinePath} fill="none" className="stroke-muted-foreground" strokeWidth="2" strokeDasharray="7 5" strokeLinecap="round" strokeLinejoin="round" /> : null}
         {runPath ? <path d={runPath} fill="none" className="stroke-primary" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /> : null}
-        {baseline?.id !== run.id ? baselinePoints.map((point, index) => <circle key={`baseline-${point.step ?? index}-${point.timestamp}`} cx={x(point, index)} cy={y(point.value)} r={point === lastBaselinePoint ? 4.5 : 3} className="fill-background stroke-muted-foreground" strokeWidth="2" />) : null}
-        {runPoints.map((point, index) => <circle key={`run-${point.step ?? index}-${point.timestamp}`} cx={x(point, index)} cy={y(point.value)} r={point === lastRunPoint ? 5 : 3.5} className="fill-background stroke-primary" strokeWidth="2" />)}
+        {baseline?.id !== run.id ? baselinePoints.map((point, index) => { const key = `baseline:${index}`; return <g key={key} role="button" tabIndex={0} aria-label={`Baseline, step ${point.step ?? index}, ${metric} ${formatValue(point.value)}`} className="cursor-pointer outline-none" {...pointEvents(key)}><circle cx={x(point, index)} cy={y(point.value)} r="11" className="fill-transparent" /><circle cx={x(point, index)} cy={y(point.value)} r={activeKey === key ? 6 : point === lastBaselinePoint ? 4.5 : 3} className="fill-background stroke-muted-foreground" strokeWidth="2" /></g> }) : null}
+        {runPoints.map((point, index) => { const key = `run:${index}`; return <g key={key} role="button" tabIndex={0} aria-label={`${run.display_id}, step ${point.step ?? index}, ${metric} ${formatValue(point.value)}`} className="cursor-pointer outline-none" {...pointEvents(key)}><circle cx={x(point, index)} cy={y(point.value)} r="11" className="fill-transparent" /><circle cx={x(point, index)} cy={y(point.value)} r={activeKey === key ? 6.5 : point === lastRunPoint ? 5 : 3.5} className="fill-background stroke-primary" strokeWidth="2" /></g> })}
+        {activePoint ? <foreignObject x={detailX} y={detailY} width={detailWidth} height={detailHeight} className="pointer-events-none overflow-visible">
+          <div className="rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-lg">
+            <div className="flex items-center justify-between gap-3"><strong className="font-mono">{activeSource === "baseline" ? `Baseline · ${baseline?.display_id}` : run.display_id}</strong><span className="text-muted-foreground">Step {(activePoint.step ?? activeIndex).toLocaleString()}</span></div>
+            <div className="mt-2 flex items-end justify-between gap-3"><span className="text-muted-foreground">{metric}</span><strong className="font-mono text-sm">{formatValue(activePoint.value)}</strong></div>
+            <div className="mt-1 text-right text-muted-foreground">{new Date(activePoint.timestamp).toLocaleString()}</div>
+          </div>
+        </foreignObject> : null}
       </svg>
-      <p className="mt-1 text-center text-xs text-muted-foreground">step 0 – {maxStep.toLocaleString()} · {metric} · lower values are better</p>
+      <p className="mt-1 text-center text-xs text-muted-foreground">step 0 – {maxStep.toLocaleString()} · {metric} · hover or focus for details · click to pin</p>
     </div>
   )
 }

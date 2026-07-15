@@ -123,6 +123,19 @@ class Run:
         self._finished = False
 
     def __enter__(self) -> "Run":
+        existing_id = self.options.pop("run_id", None) or os.getenv("RUNTRACE_RUN_ID")
+        if existing_id:
+            existing = self.client.request("GET", f"/api/v1/runs/{existing_id}")
+            if not existing:
+                raise RuntimeError(f"RUNTRACE_RUN_ID does not identify an accessible run: {existing_id}")
+            if existing.get("lifecycle") != "running":
+                raise RuntimeError(f"RUNTRACE_RUN_ID must identify a running run: {existing_id}")
+            project = self.client.request("GET", f"/api/v1/projects/{self.project}")
+            if not project or existing.get("project_id") != project.get("id"):
+                raise RuntimeError(f"RUNTRACE_RUN_ID belongs to a different project: {existing_id}")
+            self.id = existing["id"]
+            self.display_id = existing.get("display_id")
+            return self
         cwd = self.options.pop("working_directory", os.getcwd())
         configuration = dict(self.options.pop("configuration", {}))
         configuration["tags"] = self.tags

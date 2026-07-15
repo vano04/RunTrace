@@ -32,6 +32,7 @@ from .models import (
     ProjectMembership,
     ProgramVersion,
     Project,
+    ResultVisualizationType,
     Run,
     RunEvent,
     RunMetric,
@@ -56,6 +57,7 @@ from .schemas import (
     ProjectCreate,
     ProjectRead,
     ProjectUpdate,
+    ResultVisualizationTypeCreate,
     RunCrash,
     RunCreate,
     RunFinish,
@@ -108,6 +110,13 @@ AUTORESEARCH_COMPLETION_STEP = 3350
 AUTORESEARCH_EARLY_RUNTIME_SECONDS = 4000
 AUTORESEARCH_LONG_RUNTIME_SECONDS = 6000
 TEXT_ARTIFACT_SUFFIXES = {".cfg", ".conf", ".csv", ".env", ".ini", ".json", ".jsonl", ".log", ".md", ".out", ".stderr", ".stdout", ".toml", ".txt", ".yaml", ".yml"}
+BUILTIN_RESULT_TYPES = [
+    {"key": "curve", "name": "Curve", "description": "Interactive step series compared with the project baseline."},
+    {"key": "timings", "name": "Timings", "description": "Large timing metric summaries."},
+    {"key": "scalar", "name": "Scalar", "description": "Large scalar metric summaries."},
+    {"key": "bar", "name": "Bar chart", "description": "Interactive top-ten latest metrics, useful for call counts and ranked categories."},
+    {"key": "none", "name": "None", "description": "No primary result visualization."},
+]
 
 
 def startup() -> None:
@@ -162,7 +171,11 @@ async def demo_claim_loop() -> None:
 
 
 def get_project(session: Session, identifier: str) -> Project:
-    project = session.scalar(select(Project).where(or_(Project.slug == identifier, Project.id == identifier)))
+    project = session.scalar(
+        select(Project).where(
+            or_(Project.id == identifier, func.lower(Project.slug) == identifier.lower())
+        )
+    )
     if not project:
         raise HTTPException(404, "Project not found")
     return project
@@ -413,7 +426,7 @@ def get_visualization(session: Session, project: Project, identifier: str) -> Vi
     return item
 
 
-def resolve_visualization_datasets(session: Session, project: Project, spec: dict) -> dict[str, list[dict]]:
+def resolve_visualization_datasets(session: Session, project: Project, spec: dict, source_run: Run | None = None) -> dict[str, list[dict]]:
     resolved: dict[str, list[dict]] = {}
     for name, dataset in spec.get("datasets", {}).items():
         if dataset.get("source") == "inline":
@@ -424,7 +437,21 @@ def resolve_visualization_datasets(session: Session, project: Project, spec: dic
         limit = min(max(requested_limit if isinstance(requested_limit, int) and not isinstance(requested_limit, bool) else 250, 1), 1_000)
         include_tags = _normalise_tags(filters.get("include_tags"))
         exclude_tags = _normalise_tags(filters.get("exclude_tags"))
-        if dataset.get("query") == "runs":
+        if dataset.get("query") == "run_metrics":
+            if not source_run:
+                raise HTTPException(422, "run_metrics datasets require an experiment run")
+            points = sorted(source_run.metrics, key=lambda item: (item.name, item.step or 0, item.timestamp))
+            if filters.get("latest_per_name"):
+                latest = {}
+                for point in points:
+                    latest[point.name] = point
+                points = list(latest.values())
+            rows = [{**(point.context or {}), "name": point.name, "value": point.value, "step": point.step, "timestamp": point.timestamp.isoformat()} for point in points]
+            sort_by = filters.get("sort_by")
+            if isinstance(sort_by, str):
+                rows.sort(key=lambda row: (0, row.get(sort_by)) if isinstance(row.get(sort_by), (int, float)) else (1, str(row.get(sort_by) or "")), reverse=filters.get("order") == "desc")
+            resolved[name] = rows[:limit]
+        elif dataset.get("query") == "runs":
             runs = session.scalars(
                 select(Run)
                 .options(selectinload(Run.metrics), selectinload(Run.parameters), selectinload(Run.project).selectinload(Project.tag_definitions))
@@ -511,6 +538,41 @@ def visualization_payload(session: Session, project: Project, item: Visualizatio
     if resolve:
         payload["resolved_datasets"] = resolve_visualization_datasets(session, project, item.spec)
     return payload
+
+
+def result_type_payload(item: ResultVisualizationType) -> dict:
+    return {"id": item.id, "key": item.key, "name": item.name, "description": item.description, "spec_version": item.spec_version, "spec": item.spec, "builtin": False, "created_by": item.created_by, "created_at": item.created_at, "updated_at": item.updated_at}
+
+
+def result_type_options(session: Session, project: Project) -> list[dict]:
+    custom = session.scalars(select(ResultVisualizationType).where(ResultVisualizationType.project_id == project.id).order_by(ResultVisualizationType.name)).all()
+    return [{**item, "id": None, "spec": None, "builtin": True} for item in BUILTIN_RESULT_TYPES] + [result_type_payload(item) for item in custom]
+
+
+def validate_result_type(session: Session, project: Project, key: str) -> None:
+    if key in {item["key"] for item in BUILTIN_RESULT_TYPES}:
+        return
+    if session.scalar(select(ResultVisualizationType.id).where(ResultVisualizationType.project_id == project.id, ResultVisualizationType.key == key)):
+        return
+    raise HTTPException(422, f"Unknown experiment result display type: {key}")
+
+
+def run_result_visualization(session: Session, project: Project, run: Run) -> dict | None:
+    if run.metric_mode == "bar":
+        spec = normalized_spec(RTVisSpec.model_validate({
+            "version": 1,
+            "title": "Top metrics",
+            "description": "Latest recorded value for the top ten metrics.",
+            "datasets": {"metrics": {"source": "runtrace", "query": "run_metrics", "filters": {"latest_per_name": True, "sort_by": "value", "order": "desc", "limit": 10}}},
+            "view": {"type": "chart", "chart": "bar", "dataset": "metrics", "x": "name", "y": "value"},
+        }))
+        name, description = "Bar chart", "Top ten latest run metrics"
+    else:
+        item = session.scalar(select(ResultVisualizationType).where(ResultVisualizationType.project_id == project.id, ResultVisualizationType.key == run.metric_mode))
+        if not item:
+            return None
+        spec, name, description = item.spec, item.name, item.description
+    return {"key": run.metric_mode, "name": name, "description": description, "spec": spec, "resolved_datasets": resolve_visualization_datasets(session, project, spec, source_run=run)}
 
 
 @app.get("/health")
@@ -622,8 +684,70 @@ def update_project_settings(project: str, body: ProgressSettingsUpdate, session:
 
 @app.get("/api/v1/projects/{project}/visualizations/guide")
 def get_visualization_guide(project: str, session: Session = Depends(get_db)) -> dict:
-    get_project(session, project)
-    return visualization_guide()
+    current = get_project(session, project)
+    saved = session.scalars(
+        select(Visualization).where(Visualization.project_id == current.id).order_by(Visualization.sort_order, Visualization.created_at)
+    ).all()
+    return visualization_guide([
+        {"id": item.id, "name": item.name, "description": item.description or item.spec.get("description", ""), "source_run_id": item.source_run_id}
+        for item in saved
+    ])
+
+
+@app.get("/api/v1/projects/{project}/result-visualizations/guide")
+def get_result_visualization_guide(project: str, session: Session = Depends(get_db)) -> dict:
+    current = get_project(session, project)
+    guide = visualization_guide()
+    return {
+        "purpose": "Reusable experiment result display types rendered inside run details; separate from project dashboard visualizations.",
+        "rules": [
+            "Use runtrace run_metrics datasets for recorded experiment data.",
+            "Create a type only when curve, timings, scalar, bar, and none do not fit.",
+            "After creation, use its key as metric_mode on an experiment or run.",
+            "Design for repeated use across runs; do not embed one run's values as inline rows.",
+        ],
+        "result_types": result_type_options(session, current),
+        "json_schema": guide["json_schema"],
+        "supported_nodes": guide["supported_nodes"],
+        "supported_charts": guide["supported_charts"],
+        "dataset": {"source": "runtrace", "query": "run_metrics", "fields": ["name", "value", "step", "timestamp", "context fields"], "filters": ["latest_per_name", "sort_by", "order", "limit"]},
+    }
+
+
+@app.get("/api/v1/projects/{project}/result-visualizations")
+def list_result_visualizations(project: str, session: Session = Depends(get_db)) -> list[dict]:
+    return result_type_options(session, get_project(session, project))
+
+
+@app.post("/api/v1/projects/{project}/result-visualizations", status_code=201)
+def create_result_visualization(project: str, body: ResultVisualizationTypeCreate, session: Session = Depends(get_db)) -> dict:
+    current = get_project(session, project)
+    if body.key in {item["key"] for item in BUILTIN_RESULT_TYPES} or session.scalar(select(ResultVisualizationType.id).where(ResultVisualizationType.project_id == current.id, ResultVisualizationType.key == body.key)):
+        raise HTTPException(409, "An experiment result display type with this key already exists")
+    document = normalized_spec(body.spec)
+    if not any(dataset.get("source") == "runtrace" and dataset.get("query") == "run_metrics" for dataset in document["datasets"].values()):
+        raise HTTPException(422, "Experiment result visualization types must include a run_metrics dataset")
+    item = ResultVisualizationType(project_id=current.id, key=body.key, name=body.name.strip(), description=body.description.strip(), spec_version=body.spec.version, spec=document, created_by=body.created_by.strip())
+    session.add(item)
+    session.flush()
+    audit(session, current.id, "result_visualization.created", "result_visualization", item.id, item.created_by, None, {"key": item.key})
+    session.commit()
+    session.refresh(item)
+    return result_type_payload(item)
+
+
+@app.delete("/api/v1/projects/{project}/result-visualizations/{key}", status_code=204)
+def delete_result_visualization(project: str, key: str, session: Session = Depends(get_db)) -> None:
+    current = get_project(session, project)
+    item = session.scalar(select(ResultVisualizationType).where(ResultVisualizationType.project_id == current.id, ResultVisualizationType.key == key))
+    if not item:
+        raise HTTPException(404, "Experiment result visualization type not found")
+    in_use = session.scalar(select(Experiment.id).where(Experiment.project_id == current.id, Experiment.metric_mode == key).limit(1)) or session.scalar(select(Run.id).where(Run.project_id == current.id, Run.metric_mode == key).limit(1))
+    if in_use:
+        raise HTTPException(409, "This result visualization type is used by an experiment or run")
+    audit(session, current.id, "result_visualization.deleted", "result_visualization", item.id, "human", None, {"key": item.key})
+    session.delete(item)
+    session.commit()
 
 
 @app.post("/api/v1/projects/{project}/visualizations/preview")
@@ -648,6 +772,7 @@ def create_visualization(project: str, body: VisualizationCreate, session: Sessi
     name = body.name.strip()
     if session.scalar(select(Visualization.id).where(Visualization.project_id == current.id, Visualization.name == name)):
         raise HTTPException(409, "A visualization with this name already exists")
+    source_run = None
     if body.source_run_id:
         source_run = get_run(session, body.source_run_id)
         if source_run.project_id != current.id:
@@ -660,7 +785,7 @@ def create_visualization(project: str, body: VisualizationCreate, session: Sessi
         spec=normalized_spec(body.spec),
         visible=body.visible,
         sort_order=body.sort_order,
-        source_run_id=body.source_run_id,
+        source_run_id=source_run.id if source_run else None,
         created_by=body.created_by.strip(),
     )
     session.add(item)
@@ -697,11 +822,12 @@ def update_visualization(project: str, visualization_id: str, body: Visualizatio
     if body.sort_order is not None:
         item.sort_order = body.sort_order
     if "source_run_id" in body.model_fields_set:
+        source_run = None
         if body.source_run_id:
             source_run = get_run(session, body.source_run_id)
             if source_run.project_id != current.id:
                 raise HTTPException(409, "Source run must belong to this project")
-        item.source_run_id = body.source_run_id
+        item.source_run_id = source_run.id if source_run else None
     item.revision += 1
     audit(session, current.id, "visualization.updated", "visualization", item.id, "human", None, {"name": item.name, "revision": item.revision})
     session.commit()
@@ -840,6 +966,7 @@ def list_experiments(
 @app.post("/api/v1/projects/{project}/experiments", response_model=ExperimentRead, status_code=201)
 def create_experiment(project: str, body: ExperimentCreate, x_request_id: str | None = Header(None), session: Session = Depends(get_db)) -> Experiment:
     current = get_project(session, project)
+    validate_result_type(session, current, body.metric_mode)
     item = Experiment(project_id=current.id, display_id=next_display_id(session, current.id, Experiment, "EXP"), **body.model_dump())
     session.add(item)
     session.flush()
@@ -870,6 +997,8 @@ def update_experiment(
     changes = {key: value for key, value in body.model_dump(exclude_unset=True).items() if value is not None}
     if not changes:
         return item
+    if "metric_mode" in changes:
+        validate_result_type(session, current, changes["metric_mode"])
     for key, value in changes.items():
         setattr(item, key, value)
     item.updated_at = now_utc()
@@ -1021,7 +1150,11 @@ def create_run(project: str, body: RunCreate, x_actor: str = Header("agent"), x_
         if experiment.lifecycle not in {"pending", "proposed"}:
             raise HTTPException(409, "Experiment cannot be started from its current lifecycle")
         experiment.lifecycle = "running"
-    item = Run(project_id=current.id, display_id=next_display_id(session, current.id, Run, "RUN"), **body.model_dump())
+    values = body.model_dump()
+    if experiment and "metric_mode" not in body.model_fields_set:
+        values["metric_mode"] = experiment.metric_mode
+    validate_result_type(session, current, values["metric_mode"])
+    item = Run(project_id=current.id, display_id=next_display_id(session, current.id, Run, "RUN"), **values)
     if experiment:
         item.experiment_id = experiment.id
     session.add(item)
@@ -1072,7 +1205,11 @@ def delete_run(identifier: str, x_actor: str = Header("human"), x_request_id: st
 
 @app.get("/api/v1/runs/{identifier}")
 def read_run(identifier: str, session: Session = Depends(get_db)) -> dict:
-    return run_payload(get_run(session, identifier), detail=True)
+    run = get_run(session, identifier)
+    payload = run_payload(run, detail=True)
+    project = get_project(session, run.project_id)
+    payload["result_visualization"] = run_result_visualization(session, project, run)
+    return payload
 
 
 @app.post("/api/v1/runs/{identifier}/metrics", status_code=202)
@@ -1412,6 +1549,7 @@ def dashboard(project: str, session: Session = Depends(get_db)) -> dict:
         "available_tags": all_tags,
         "tag_definitions": [tag_payload(item) for item in sorted(current.tag_definitions, key=lambda item: item.name)],
         "visualizations": [visualization_payload(session, current, item) for item in visualizations],
+        "result_visualization_types": result_type_options(session, current),
     }
 
 

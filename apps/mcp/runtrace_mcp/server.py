@@ -20,9 +20,41 @@ def request(method: str, path: str, payload: dict[str, Any] | None = None) -> An
 
 
 @mcp.tool()
+def list_projects() -> list[dict[str, Any]]:
+    """List projects available to the current credential so callers can retrieve canonical slugs instead of guessing."""
+    return request("GET", "/api/v1/projects")
+
+
+@mcp.tool()
 def get_project_context(project: str) -> dict[str, Any]:
-    """Retrieve program.md, exclusions, baseline, metrics, proposals, and recent evidence for one project."""
+    """Retrieve context for a project slug or ID. Use list_projects when the canonical slug is unknown."""
     return request("GET", f"/api/v1/projects/{project}/context")
+
+
+@mcp.tool()
+def start_experimenting(project: str, worker_id: str, loop_mode: str = "continuous") -> dict[str, Any]:
+    """Fetch live context and return a compact one-claim-at-a-time execution contract."""
+    if loop_mode not in {"single", "continuous"}:
+        raise ValueError("loop_mode must be 'single' or 'continuous'")
+    context = request("GET", f"/api/v1/projects/{project}/context")
+    return {
+        "context": context,
+        "worker_id": worker_id,
+        "loop": {
+            "mode": loop_mode,
+            "repeat": loop_mode == "continuous",
+            "claim_limit": 1,
+            "tracking_owner_required": True,
+            "cycle": ["search", "claim", "create_or_attach_one_run", "execute", "finish_or_crash", "refresh"],
+            "stop_conditions": [
+                "The user stops or pauses the loop.",
+                "No relevant claimable experiment remains.",
+                "Required authority, credentials, hardware, or project context is unavailable.",
+                "A project exclusion or safety constraint prevents further work.",
+            ],
+        },
+        "next_action": f"Choose exactly one tracking owner, search evidence, then claim one proposal as '{worker_id}'.",
+    }
 
 
 @mcp.tool()
@@ -62,8 +94,32 @@ def delete_tag(project: str, tag_id: str) -> None:
 
 @mcp.tool()
 def get_visualization_guide(project: str) -> dict[str, Any]:
-    """Return the RTVis JSON schema, supported components, chart types, data sources, and RunTrace styling rules."""
+    """Return the project-dashboard visualization guide, including existing built-ins and widgets to avoid duplicating."""
     return request("GET", f"/api/v1/projects/{project}/visualizations/guide")
+
+
+@mcp.tool()
+def get_result_visualization_guide(project: str) -> dict[str, Any]:
+    """Return the separate guide and registered types for reusable experiment-run result displays."""
+    return request("GET", f"/api/v1/projects/{project}/result-visualizations/guide")
+
+
+@mcp.tool()
+def list_result_visualization_types(project: str) -> list[dict[str, Any]]:
+    """List built-in and custom experiment result display types selectable instead of curve, timings, or scalar."""
+    return request("GET", f"/api/v1/projects/{project}/result-visualizations")
+
+
+@mcp.tool()
+def create_result_visualization_type(project: str, key: str, name: str, spec: dict[str, Any], description: str = "") -> dict[str, Any]:
+    """Create a reusable experiment result display backed by the current run's run_metrics dataset."""
+    return request("POST", f"/api/v1/projects/{project}/result-visualizations", {"key": key, "name": name, "description": description, "spec": spec, "created_by": "agent"})
+
+
+@mcp.tool()
+def delete_result_visualization_type(project: str, key: str) -> None:
+    """Delete an unused custom experiment result display type; built-ins and in-use types cannot be deleted."""
+    return request("DELETE", f"/api/v1/projects/{project}/result-visualizations/{key}")
 
 
 @mcp.tool()
@@ -129,7 +185,7 @@ def get_run(run_id: str) -> dict[str, Any]:
 
 @mcp.tool()
 def propose_experiment(project: str, title: str, hypothesis: str, reasoning: str = "", implementation_details: str = "", source_model: str | None = None, metric_mode: str = "curve") -> dict[str, Any]:
-    """Add a proposed experiment to a project's shared registry without dispatching it."""
+    """Add a proposal with a built-in or registered result display key to the shared registry."""
     return request("POST", f"/api/v1/projects/{project}/experiments", {"title": title, "hypothesis": hypothesis, "reasoning": reasoning, "implementation_details": implementation_details, "source": "agent", "source_model": source_model, "metric_mode": metric_mode})
 
 
@@ -147,15 +203,24 @@ def release_experiment(project: str, experiment_id: str, worker_id: str) -> dict
 
 
 @mcp.tool()
-def create_run(project: str, name: str, hypothesis: str, reasoning: str = "", experiment_id: str | None = None, evidence_used: list[dict[str, Any]] | None = None, decision_changed: str = "", configuration: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Create and start a tracked run, ideally citing retrieved evidence."""
-    return request("POST", f"/api/v1/projects/{project}/runs", {"name": name, "hypothesis": hypothesis, "reasoning": reasoning, "experiment_id": experiment_id, "evidence_used": evidence_used or [], "decision_changed": decision_changed, "configuration": configuration or {}})
+def create_run(project: str, name: str, hypothesis: str, reasoning: str = "", experiment_id: str | None = None, evidence_used: list[dict[str, Any]] | None = None, decision_changed: str = "", configuration: dict[str, Any] | None = None, metric_mode: str | None = None) -> dict[str, Any]:
+    """Create and start a tracked run, citing evidence; claimed experiments inherit their result display unless overridden."""
+    payload = {"name": name, "hypothesis": hypothesis, "reasoning": reasoning, "experiment_id": experiment_id, "evidence_used": evidence_used or [], "decision_changed": decision_changed, "configuration": configuration or {}}
+    if metric_mode is not None:
+        payload["metric_mode"] = metric_mode
+    return request("POST", f"/api/v1/projects/{project}/runs", payload)
 
 
 @mcp.tool()
 def log_metric(run_id: str, name: str, value: float, step: int | None = None) -> dict[str, Any]:
     """Append one primary or diagnostic metric to a running run."""
     return request("POST", f"/api/v1/runs/{run_id}/metrics", {"metrics": [{"name": name, "value": value, "step": step}]})
+
+
+@mcp.tool()
+def log_metrics(run_id: str, metrics: list[dict[str, Any]]) -> dict[str, Any]:
+    """Append multiple metric points to one running run in a single request."""
+    return request("POST", f"/api/v1/runs/{run_id}/metrics", {"metrics": metrics})
 
 
 @mcp.tool()
@@ -168,6 +233,18 @@ def log_event(run_id: str, message: str, level: str = "info", event_type: str | 
 def finish_run(run_id: str, disposition: str, result_summary: str, conclusion: str) -> dict[str, Any]:
     """Finish a run and record its research disposition and reusable conclusion."""
     return request("POST", f"/api/v1/runs/{run_id}/finish", {"disposition": disposition, "result_summary": result_summary, "conclusion": conclusion})
+
+
+@mcp.tool()
+def crash_run(run_id: str, error_summary: str) -> dict[str, Any]:
+    """Close an unexpectedly failed execution with the crashed lifecycle instead of disguising it as a completed result."""
+    return request("POST", f"/api/v1/runs/{run_id}/crash", {"error_summary": error_summary})
+
+
+@mcp.tool()
+def set_baseline(project: str, run_id: str, actor: str = "agent") -> dict[str, Any]:
+    """Select a completed run as the project baseline after confirming comparability."""
+    return request("POST", f"/api/v1/projects/{project}/baseline", {"run_id": run_id, "actor": actor})
 
 
 def main() -> None:

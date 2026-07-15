@@ -68,6 +68,7 @@ def test_visualization_guide_preview_and_strict_validation(fresh_database):
     assert "card" in guide.json()["supported_nodes"]
     assert "javascript" in guide.json()["supported_nodes"]
     assert guide.json()["dataset_sources"]["runtrace"]["queries"] == ["runs", "experiments"]
+    assert "autoresearch_progress" in {item["id"] for item in guide.json()["existing_dashboard"]["built_ins"]}
 
     preview = fresh_database.post("/api/v1/projects/dense-optimizer/visualizations/preview", json=inline_spec())
     assert preview.status_code == 200
@@ -123,3 +124,51 @@ def test_runtrace_dataset_is_resolved_from_live_project_records(fresh_database):
     assert len(rows) == 3
     assert all(row["lifecycle"] == "completed" for row in rows)
     assert all("validation_loss" in row for row in rows)
+
+
+def test_dashboard_visualizations_remain_separate_from_experiment_result_types(fresh_database):
+    created = fresh_database.post(
+        "/api/v1/projects/dense-optimizer/visualizations",
+        json={"name": "Called methods", "source_run_id": "RUN-168", "spec": inline_spec("Called methods")},
+    )
+    assert created.status_code == 201, created.text
+
+    run = fresh_database.get("/api/v1/runs/RUN-168")
+    assert run.status_code == 200
+    assert run.json()["result_visualization"] is None
+
+    guide = fresh_database.get("/api/v1/projects/dense-optimizer/visualizations/guide").json()
+    assert guide["existing_dashboard"]["saved_custom_visualizations"][0]["name"] == "Called methods"
+    assert guide["existing_dashboard"]["saved_custom_visualizations"][0]["source_run_id"] == "run_168"
+
+    result_guide = fresh_database.get("/api/v1/projects/dense-optimizer/result-visualizations/guide").json()
+    assert result_guide["purpose"].startswith("Reusable experiment result")
+    assert "bar" in {item["key"] for item in result_guide["result_types"]}
+
+
+def test_custom_experiment_result_type_renders_current_run_metrics(fresh_database):
+    spec = {
+        "version": 1,
+        "title": "Top called methods",
+        "datasets": {"metrics": {"source": "runtrace", "query": "run_metrics", "filters": {"latest_per_name": True, "sort_by": "value", "order": "desc", "limit": 10}}},
+        "view": {"type": "chart", "chart": "bar", "dataset": "metrics", "x": "name", "y": "value"},
+    }
+    created_type = fresh_database.post(
+        "/api/v1/projects/dense-optimizer/result-visualizations",
+        json={"key": "called-methods", "name": "Called methods", "spec": spec},
+    )
+    assert created_type.status_code == 201, created_type.text
+    run = fresh_database.post(
+        "/api/v1/projects/dense-optimizer/runs",
+        json={"name": "Compiler profile", "metric_mode": "called-methods"},
+    )
+    assert run.status_code == 201, run.text
+    run_id = run.json()["id"]
+    metrics = fresh_database.post(
+        f"/api/v1/runs/{run_id}/metrics",
+        json={"metrics": [{"name": "compileFoo", "value": 40}, {"name": "compileBar", "value": 12}]},
+    )
+    assert metrics.status_code == 202
+    detail = fresh_database.get(f"/api/v1/runs/{run_id}").json()
+    assert detail["result_visualization"]["key"] == "called-methods"
+    assert detail["result_visualization"]["resolved_datasets"]["metrics"][0]["name"] == "compileFoo"

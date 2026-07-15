@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { ArtifactFiles, ArtifactUploadDialog, artifactKind } from "@/components/artifact-files"
 import { RunCurveChart } from "@/components/run-curve-chart"
+import { VisualizationRenderer } from "@/components/visualization-renderer"
 import { StatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -62,6 +63,7 @@ function RunDetails({ run, baselineRun, metric, reload }: { run: Run; baselineRu
     {run.reasoning ? <section><h3 className="mb-2 text-sm font-medium">Reasoning</h3><p className="text-sm leading-6 text-muted-foreground">{run.reasoning}</p></section> : null}
     {run.change_summary ? <section><h3 className="mb-2 text-sm font-medium">What changed</h3><p className="text-sm leading-6 text-muted-foreground">{run.change_summary}</p></section> : null}
     {run.metric_mode === "curve" && curveMetric && run.metrics?.[curveMetric]?.points.length ? <section className="rounded-xl border bg-background/60 p-4 sm:p-5"><div className="mb-3"><h3 className="text-sm font-medium">{curveMetric} vs baseline</h3><p className="mt-1 text-xs text-muted-foreground">{run.lifecycle === "running" ? "New points appear here automatically every ten seconds." : `Every recorded ${curveMetric} point across the shared step range.`}</p></div><RunCurveChart run={run} baseline={baselineRun} metric={curveMetric} /></section> : null}
+    {run.result_visualization ? <section><div className="mb-3"><h3 className="text-sm font-medium">{run.result_visualization.name}</h3><p className="mt-1 text-xs text-muted-foreground">{run.result_visualization.description || "Experiment-specific result visualization."}</p></div><VisualizationRenderer visualization={run.result_visualization} /></section> : null}
     {metricEntries.length ? <section><h3 className="mb-3 text-sm font-medium">{run.metric_mode === "timings" ? "Timing results" : "Metrics"}</h3><div className="grid gap-3 sm:grid-cols-2">{metricEntries.map(([name, summary]) => <div key={name} className="rounded-lg border p-5"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{name.replaceAll("_", " ")}</span><strong className={`mt-2 block font-mono ${run.metric_mode === "timings" || run.metric_mode === "scalar" ? "text-4xl tracking-tight" : "text-2xl"}`}>{summary.latest}</strong><small className="mt-2 block text-muted-foreground">{summary.count} {summary.count === 1 ? "point" : "points"} · range {summary.min}–{summary.max}</small></div>)}</div></section> : null}
     {run.result_summary || run.conclusion ? <section className="rounded-lg border bg-muted/40 p-5"><h3 className="text-sm font-medium">Conclusion</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">{run.conclusion || run.result_summary}</p></section> : null}
     {run.command ? <section><h3 className="mb-2 flex items-center gap-2 text-sm font-medium"><Terminal className="size-4" />Command</h3><pre className="overflow-x-auto rounded-lg bg-muted p-4 font-mono text-xs">{run.command}</pre></section> : null}

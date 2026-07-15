@@ -204,7 +204,11 @@ def _project_id_for_request(session: Session, path: str) -> str | None:
     project_match = re.match(r"^/api/v1/projects/([^/]+)", path)
     if project_match:
         identifier = project_match.group(1)
-        return session.scalar(select(Project.id).where((Project.id == identifier) | (Project.slug == identifier)))
+        return session.scalar(
+            select(Project.id).where(
+                (Project.id == identifier) | (func.lower(Project.slug) == identifier.lower())
+            )
+        )
     run_match = re.match(r"^/api/v1/runs/([^/]+)", path)
     if run_match:
         identifier = run_match.group(1)
@@ -518,7 +522,11 @@ def _project_admin(session: Session, project_id: str, principal: AuthPrincipal) 
 
 
 def _project(session: Session, identifier: str) -> Project:
-    project = session.scalar(select(Project).where((Project.id == identifier) | (Project.slug == identifier)))
+    project = session.scalar(
+        select(Project).where(
+            (Project.id == identifier) | (func.lower(Project.slug) == identifier.lower())
+        )
+    )
     if not project:
         raise HTTPException(404, "Project not found")
     return project

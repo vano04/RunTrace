@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useState } from "react"
+import { FormEvent, useEffect, useState } from "react"
 import { FlaskConical, Plus } from "lucide-react"
 import { toast } from "sonner"
 
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { runtrace } from "@/lib/api"
+import type { ExperimentResultVisualizationType } from "@/lib/types"
 
 export function CreateExperimentDialog({ slug, onCreated }: { slug: string; onCreated: () => void }) {
   const [open, setOpen] = useState(false)
@@ -20,6 +21,12 @@ export function CreateExperimentDialog({ slug, onCreated }: { slug: string; onCr
   const [reasoning, setReasoning] = useState("")
   const [details, setDetails] = useState("")
   const [metricMode, setMetricMode] = useState("curve")
+  const [resultTypes, setResultTypes] = useState<ExperimentResultVisualizationType[]>([])
+
+  useEffect(() => {
+    if (!open) return
+    runtrace.resultVisualizationTypes(slug).then(setResultTypes).catch(() => undefined)
+  }, [open, slug])
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setPending(true)
@@ -49,7 +56,7 @@ export function CreateExperimentDialog({ slug, onCreated }: { slug: string; onCr
             <Field><FieldLabel>Result display</FieldLabel>
               <Select value={metricMode} onValueChange={(value) => setMetricMode(value ?? "curve")}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectGroup>{["curve", "timings", "scalar", "none"].map((value) => <SelectItem key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</SelectItem>)}</SelectGroup></SelectContent>
+                <SelectContent><SelectGroup>{(resultTypes.length ? resultTypes : [{ key: "curve", name: "Curve" }, { key: "timings", name: "Timings" }, { key: "scalar", name: "Scalar" }, { key: "bar", name: "Bar chart" }, { key: "none", name: "None" }]).map((item) => <SelectItem key={item.key} value={item.key}>{item.name}</SelectItem>)}</SelectGroup></SelectContent>
               </Select>
             </Field>
           </FieldGroup>

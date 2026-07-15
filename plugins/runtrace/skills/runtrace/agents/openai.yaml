@@ -1,4 +1,4 @@
 interface:
   display_name: "RunTrace"
-  short_description: "Use shared experiment memory safely"
-  default_prompt: "Use RunTrace to retrieve prior evidence and record this experiment."
+  short_description: "Claim, run, and preserve shared experiments"
+  default_prompt: "Use $runtrace to claim and execute one evidence-driven experiment, then preserve its result."

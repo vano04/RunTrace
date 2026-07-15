@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -46,6 +46,8 @@ function metricValue(node: RTVisNode, rows: Row[]) {
 }
 
 function VisualizationChart({ node, rows }: { node: RTVisNode; rows: Row[] }) {
+  const [hovered, setHovered] = useState<number | null>(null)
+  const [pinned, setPinned] = useState<number | null>(null)
   const width = 880, height = 280, left = 54, right = 42, top = 24, bottom = 46
   const points = rows.map((row, index) => ({
     row,
@@ -78,6 +80,19 @@ function VisualizationChart({ node, rows }: { node: RTVisNode; rows: Row[] }) {
   const yFor = (value: number) => top + (yMax - value) / ySpan * (height - top - bottom)
   const paths = groups.map((group) => ({ group, points: points.filter((point) => point.series === group) }))
   const barWidth = Math.max(3, (width - left - right) / Math.max(points.length, 1) * .7)
+  const activeIndex = hovered ?? pinned
+  const activePoint = activeIndex === null ? null : points.find((point) => point.index === activeIndex) ?? null
+  const activeX = activePoint ? xFor(points.indexOf(activePoint)) : 0
+  const activeY = activePoint ? yFor(activePoint.y) : 0
+  const detailWidth = 190, detailHeight = 70, detailGap = 14
+  const detailX = activeX + detailWidth + detailGap <= width - right ? activeX + detailGap : activeX - detailWidth - detailGap
+  const detailY = Math.min(height - bottom - detailHeight, Math.max(4, activeY - detailHeight / 2))
+  const pointEvents = (index: number) => ({
+    onMouseEnter: () => setHovered(index), onMouseLeave: () => setHovered(null),
+    onFocus: () => setHovered(index), onBlur: () => setHovered(null),
+    onClick: () => setPinned(pinned === index ? null : index),
+    onKeyDown: (event: KeyboardEvent<SVGGElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setPinned(pinned === index ? null : index) } },
+  })
 
   return <div className="overflow-x-auto"><svg viewBox={`0 0 ${width} ${height}`} className="min-w-[620px]" role="img" aria-label={`${node.title || node.chart || "Chart"}. ${points.length} plotted values.`}>
     {[0, .25, .5, .75, 1].map((fraction) => {
@@ -86,15 +101,16 @@ function VisualizationChart({ node, rows }: { node: RTVisNode; rows: Row[] }) {
     })}
     {node.chart === "bar" ? points.map((point, index) => {
       const y = yFor(Math.max(0, point.y)), zero = yFor(0)
-      return <rect key={point.index} x={xFor(index) - barWidth / 2} y={Math.min(y, zero)} width={barWidth} height={Math.max(1, Math.abs(zero - yFor(point.y)))} rx="3" fill={SERIES_COLORS[groups.indexOf(point.series) % SERIES_COLORS.length]}><title>{point.xLabel}: {point.y}</title></rect>
+      return <g key={point.index} role="button" tabIndex={0} aria-label={`${point.xLabel}: ${point.y}`} className="cursor-pointer outline-none" {...pointEvents(point.index)}><rect x={xFor(index) - barWidth / 2} y={Math.min(y, zero)} width={barWidth} height={Math.max(1, Math.abs(zero - yFor(point.y)))} rx="3" fill={SERIES_COLORS[groups.indexOf(point.series) % SERIES_COLORS.length]} opacity={activeIndex === point.index ? 1 : .82} /></g>
     }) : paths.map(({ group, points: seriesPoints }, groupIndex) => {
       const coordinates = seriesPoints.map((point) => ({ ...point, x: xFor(points.indexOf(point)), py: yFor(point.y) }))
       const path = coordinates.map((point, index) => `${index ? "L" : "M"} ${point.x} ${point.py}`).join(" ")
       const area = `${path} L ${coordinates.at(-1)?.x} ${yFor(0)} L ${coordinates[0]?.x} ${yFor(0)} Z`
-      return <g key={group}>{node.chart === "area" ? <path d={area} fill={SERIES_COLORS[groupIndex % SERIES_COLORS.length]} opacity="0.18" /> : null}{node.chart !== "scatter" ? <path d={path} fill="none" stroke={SERIES_COLORS[groupIndex % SERIES_COLORS.length]} strokeWidth="2.5" strokeLinejoin="round" /> : null}{coordinates.map((point) => <circle key={point.index} cx={point.x} cy={point.py} r="4" fill="var(--background)" stroke={SERIES_COLORS[groupIndex % SERIES_COLORS.length]} strokeWidth="2"><title>{point.xLabel}: {point.y}</title></circle>)}</g>
+      return <g key={group}>{node.chart === "area" ? <path d={area} fill={SERIES_COLORS[groupIndex % SERIES_COLORS.length]} opacity="0.18" /> : null}{node.chart !== "scatter" ? <path d={path} fill="none" stroke={SERIES_COLORS[groupIndex % SERIES_COLORS.length]} strokeWidth="2.5" strokeLinejoin="round" /> : null}{coordinates.map((point) => <g key={point.index} role="button" tabIndex={0} aria-label={`${point.xLabel}: ${point.y}`} className="cursor-pointer outline-none" {...pointEvents(point.index)}><circle cx={point.x} cy={point.py} r="11" fill="transparent" /><circle cx={point.x} cy={point.py} r={activeIndex === point.index ? 6 : 4} fill="var(--background)" stroke={SERIES_COLORS[groupIndex % SERIES_COLORS.length]} strokeWidth="2" /></g>)}</g>
     })}
     {points.filter((_, index) => index % Math.max(1, Math.ceil(points.length / 8)) === 0 || index === points.length - 1).map((point) => <text key={`label-${point.index}`} x={xFor(points.indexOf(point))} y={height - 18} textAnchor="middle" className="fill-muted-foreground text-[10px]">{point.xLabel}</text>)}
-  </svg>{groups.length > 1 ? <div className="mt-2 flex flex-wrap justify-center gap-4 text-xs text-muted-foreground">{groups.map((group, index) => <span key={group} className="flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ background: SERIES_COLORS[index % SERIES_COLORS.length] }} />{group}</span>)}</div> : null}</div>
+    {activePoint ? <foreignObject x={detailX} y={detailY} width={detailWidth} height={detailHeight} className="pointer-events-none overflow-visible"><div className="rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-lg"><div className="truncate font-medium">{activePoint.xLabel}</div><div className="mt-2 flex justify-between gap-3"><span className="text-muted-foreground">{activePoint.series}</span><strong className="font-mono">{displayValue(activePoint.y, "number")}</strong></div></div></foreignObject> : null}
+  </svg><p className="mt-1 text-center text-xs text-muted-foreground">hover or focus for details · click to pin</p>{groups.length > 1 ? <div className="mt-2 flex flex-wrap justify-center gap-4 text-xs text-muted-foreground">{groups.map((group, index) => <span key={group} className="flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ background: SERIES_COLORS[index % SERIES_COLORS.length] }} />{group}</span>)}</div> : null}</div>
 }
 
 function widgetDocument(node: RTVisNode, datasets: Record<string, Row[]>, theme: Record<string, string>) {
@@ -140,7 +156,7 @@ function NodeView({ node, datasets }: { node: RTVisNode; datasets: Record<string
   return null
 }
 
-export function VisualizationRenderer({ visualization }: { visualization: Visualization }) {
+export function VisualizationRenderer({ visualization }: { visualization: Pick<Visualization, "spec" | "resolved_datasets"> }) {
   const datasets = useMemo(() => visualization.resolved_datasets ?? {}, [visualization.resolved_datasets])
   return <NodeView node={visualization.spec.view} datasets={datasets} />
 }

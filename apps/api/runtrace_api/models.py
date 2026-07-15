@@ -39,6 +39,7 @@ class Project(Base):
     tag_definitions: Mapped[list[TagDefinition]] = relationship(back_populates="project", cascade="all, delete-orphan")
     memberships: Mapped[list[ProjectMembership]] = relationship(back_populates="project", cascade="all, delete-orphan")
     visualizations: Mapped[list[Visualization]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    result_visualization_types: Mapped[list[ResultVisualizationType]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
 class Identity(Base):
@@ -349,6 +350,24 @@ class Visualization(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 
     project: Mapped[Project] = relationship(back_populates="visualizations")
+
+
+class ResultVisualizationType(Base):
+    __tablename__ = "result_visualization_types"
+    __table_args__ = (UniqueConstraint("project_id", "key"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("resultvis"))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    spec_version: Mapped[int] = mapped_column(Integer, default=1)
+    spec: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(200), default="agent")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+    project: Mapped[Project] = relationship(back_populates="result_visualization_types")
 
 
 class AuditEvent(Base):

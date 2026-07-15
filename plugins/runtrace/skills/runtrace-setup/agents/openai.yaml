@@ -1,0 +1,4 @@
+interface:
+  display_name: "RunTrace Setup"
+  short_description: "Connect and preflight experiment tracking"
+  default_prompt: "Use $runtrace-setup to verify this repository has one reliable RunTrace tracking path."
