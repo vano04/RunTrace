@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowLeft, BookOpen, Braces, CircleDot, Code2, Database, GitBranch, Plug, Radio, Search, Terminal } from "lucide-react"
+import { Activity, ArrowLeft, BookOpen, Braces, CircleDot, Code2, Database, GitBranch, Plug, Radio, Search, Terminal } from "lucide-react"
 
 import { RunTraceLogo } from "@/components/runtrace-logo"
 import { Badge } from "@/components/ui/badge"
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 const sections = [
   { id: "start", label: "Quick start" },
   { id: "concepts", label: "Core concepts" },
+  { id: "live", label: "Live metrics" },
   { id: "python", label: "Python SDK" },
   { id: "cli", label: "CLI" },
   { id: "mcp", label: "MCP" },
@@ -52,8 +53,20 @@ uv run runtrace auth rt_runtrace_dev --base-url http://localhost:8000`}</Code>
           </dl>
         </DocSection>
 
+        <DocSection id="live" title="Live metrics" icon={Activity}>
+          <p>HTTP, Python, CLI, and MCP metrics all enter the same run stream. Open a project, select a running run, and leave its details open: curve points, metric summaries, structured events, and lifecycle status update as data is committed.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border p-4"><strong className="text-foreground">Python SDK</strong><p className="mt-1">Instrument training code with <code className="rounded bg-muted px-1.5 py-0.5">log_metric</code> or batch related series with <code className="rounded bg-muted px-1.5 py-0.5">log_metrics</code>.</p></div>
+            <div className="rounded-lg border p-4"><strong className="text-foreground">CLI wrapper</strong><p className="mt-1">Wrap an unchanged process and print structured metric or event lines to flushed stdout.</p></div>
+            <div className="rounded-lg border p-4"><strong className="text-foreground">HTTP API</strong><p className="mt-1">Create a run and post metric batches directly from any language or service.</p></div>
+            <div className="rounded-lg border p-4"><strong className="text-foreground">MCP tools</strong><p className="mt-1">Let an agent create the run, log evidence during execution, and record its conclusion.</p></div>
+          </div>
+          <p>Use a stable metric name, monotonically increasing integer steps, and <code className="rounded bg-muted px-1.5 py-0.5">metric_mode: &quot;curve&quot;</code>. New points are accepted only while the run is <Badge variant="outline">running</Badge> and normally appear within about two seconds.</p>
+          <p><strong className="text-foreground">One execution should have one run.</strong> Choose one component to create it. If an MCP agent creates a run before launching an instrumented Python process, pass the returned ID as <code className="rounded bg-muted px-1.5 py-0.5">RUNTRACE_RUN_ID</code> so the SDK attaches to that record.</p>
+        </DocSection>
+
         <DocSection id="python" title="Python SDK" icon={Code2}>
-          <p>The context manager captures the current Git branch, commit, command, host metadata, and completion or crash state. Metrics are buffered briefly if the API is unavailable.</p>
+          <p>The context manager creates the run and captures its Git branch, commit, command, host metadata, and completion or crash state. Metrics are buffered briefly if the API is unavailable.</p>
           <Code>{`import os
 from runtrace import configure, run
 
@@ -66,13 +79,19 @@ with run(
     tags=["schedule"],
 ) as tracked:
     for step in range(0, 1001, 100):
-        tracked.log_metric("validation_loss", evaluate(step), step=step)
+        train_loss, validation_loss = train_and_evaluate(step)
+        tracked.log_metrics(
+            {"train_loss": train_loss, "validation_loss": validation_loss},
+            step=step,
+        )
+        tracked.log_event(f"Completed step {step}", event_type="checkpoint")
     tracked.log_config({"cap_start": 0.85, "relax_step": 600})
     tracked.finish("kept", "3.24 at step 1000", "Improved the baseline reproducibly.")`}</Code>
+          <p>If a run already exists, start the process with <code className="rounded bg-muted px-1.5 py-0.5">RUNTRACE_RUN_ID=run_... python train.py</code>. The SDK validates and attaches to that running record instead of creating a duplicate.</p>
         </DocSection>
 
         <DocSection id="cli" title="CLI" icon={Search}>
-          <p>Use the CLI to bootstrap an agent, retrieve prior evidence, or wrap any command that emits structured output.</p>
+          <p>Use the CLI to bootstrap an agent, retrieve prior evidence, or wrap any command that emits structured output. Flush each line in long-running programs so it reaches the dashboard immediately.</p>
           <Code>{`runtrace context dense-optimizer
 runtrace search dense-optimizer "spectral changes that exceeded runtime"
 
@@ -81,9 +100,10 @@ runtrace exec --project dense-optimizer \\
   --hypothesis "late relaxation improves convergence" -- \\
   python benchmark.py
 
-# benchmark.py can print:
+# benchmark.py can print and flush:
 RUNTRACE_METRIC validation_loss=3.24 step=1000
 RUNTRACE_EVENT level=info message="checkpoint saved"`}</Code>
+          <p>The step is optional. A zero exit code completes the run as undecided; a nonzero exit code records a crash and is returned by the wrapper.</p>
         </DocSection>
 
         <DocSection id="mcp" title="MCP server" icon={Braces}>
@@ -121,14 +141,32 @@ runtrace auth rt_runtrace_dev --base-url http://localhost:8000`}</Code>
         </DocSection>
 
         <DocSection id="http" title="HTTP API and live streams" icon={Radio}>
-          <p>All API routes are under <code className="rounded bg-muted px-1.5 py-0.5">/api/v1</code>. Mutating requests accept <code className="rounded bg-muted px-1.5 py-0.5">X-Request-ID</code> for idempotency where applicable. Run streams use Server-Sent Events.</p>
-          <Code>{`curl -H "Authorization: Bearer $RUNTRACE_API_TOKEN" \
-  http://localhost:8000/api/v1/projects/dense-optimizer/context
+          <p>All API routes are under <code className="rounded bg-muted px-1.5 py-0.5">/api/v1</code>. Create a run, append batches of up to 1,000 points, and then finish it. Give retryable metric batches a unique <code className="rounded bg-muted px-1.5 py-0.5">X-Request-ID</code> to avoid duplicates.</p>
+          <Code>{`API=http://localhost:8000
+
+# Create a running curve
+curl -H "Authorization: Bearer $RUNTRACE_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"adaptive cap","hypothesis":"improve validation loss","metric_mode":"curve"}' \
+  "$API/api/v1/projects/dense-optimizer/runs"
+
+# Use the id returned above
+RUN_ID=run_...
+curl -H "Authorization: Bearer $RUNTRACE_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Request-ID: validation-step-100" \
+  -d '{"metrics":[{"name":"validation_loss","value":3.57,"step":100}]}' \
+  "$API/api/v1/runs/$RUN_ID/metrics"
 
 curl -N -H "Authorization: Bearer $RUNTRACE_API_TOKEN" \
-  http://localhost:8000/api/v1/runs/RUN-174/stream
+  "$API/api/v1/runs/$RUN_ID/stream"
 # event: metric
-# data: {"name":"validation_loss","value":3.404,"step":600,...}`}</Code>
+# data: {"id":42,"name":"validation_loss","value":3.57,"step":100,...}`}</Code>
+          <p>Metric points may include an ISO 8601 timestamp and JSON context. The SSE connection reconnects automatically in the dashboard and closes after the run completes or crashes.</p>
+          <Code>{`curl -H "Authorization: Bearer $RUNTRACE_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"disposition":"kept","result_summary":"validation_loss 3.24","conclusion":"Keep the adaptive schedule."}' \
+  "$API/api/v1/runs/$RUN_ID/finish"`}</Code>
           <Button render={<a href="/api/docs" target="_blank" rel="noreferrer" />} nativeButton={false}><BookOpen data-icon="inline-start" />Open interactive API reference</Button>
         </DocSection>
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Activity, FileJson, GitCommitHorizontal, GitPullRequest, ScrollText, Terminal } from "lucide-react"
 import { toast } from "sonner"
 
@@ -15,6 +15,35 @@ import { runtrace } from "@/lib/api"
 import type { Experiment, Run } from "@/lib/types"
 
 export type RecordSelection = { kind: "experiment" | "run"; id: string } | null
+
+type StreamMetric = { id: number; name: string; value: number; step: number | null; timestamp: string }
+type StreamEvent = { id: number; message: string; level: string; event_type: string | null; timestamp: string }
+
+function appendMetric(run: Run, point: StreamMetric): Run {
+  const current = run.metrics?.[point.name]
+  if (current?.points.some((item) => item.id === point.id)) return run
+  const points = [...(current?.points ?? []), { id: point.id, value: point.value, step: point.step, timestamp: point.timestamp }]
+    .sort((left, right) => (left.step ?? 0) - (right.step ?? 0) || left.timestamp.localeCompare(right.timestamp))
+  const values = points.map((item) => item.value)
+  return {
+    ...run,
+    metrics: {
+      ...run.metrics,
+      [point.name]: {
+        latest: points.at(-1)?.value ?? point.value,
+        min: Math.min(...values),
+        max: Math.max(...values),
+        count: points.length,
+        points,
+      },
+    },
+  }
+}
+
+function appendEvent(run: Run, event: StreamEvent): Run {
+  if (run.events?.some((item) => item.id === event.id)) return run
+  return { ...run, events: [...(run.events ?? []), event] }
+}
 
 function ImplementationDetails({ value }: { value: string }) {
   const match = value.match(/([\s\S]*?)```diff\n([\s\S]*?)```([\s\S]*)/)
@@ -62,7 +91,7 @@ function RunDetails({ run, baselineRun, metric, reload }: { run: Run; baselineRu
     </dl>
     {run.reasoning ? <section><h3 className="mb-2 text-sm font-medium">Reasoning</h3><p className="text-sm leading-6 text-muted-foreground">{run.reasoning}</p></section> : null}
     {run.change_summary ? <section><h3 className="mb-2 text-sm font-medium">What changed</h3><p className="text-sm leading-6 text-muted-foreground">{run.change_summary}</p></section> : null}
-    {run.metric_mode === "curve" && curveMetric && run.metrics?.[curveMetric]?.points.length ? <section className="rounded-xl border bg-background/60 p-4 sm:p-5"><div className="mb-3"><h3 className="text-sm font-medium">{curveMetric} vs baseline</h3><p className="mt-1 text-xs text-muted-foreground">{run.lifecycle === "running" ? "New points appear here automatically every ten seconds." : `Every recorded ${curveMetric} point across the shared step range.`}</p></div><RunCurveChart run={run} baseline={baselineRun} metric={curveMetric} /></section> : null}
+    {run.metric_mode === "curve" && curveMetric && run.metrics?.[curveMetric]?.points.length ? <section className="rounded-xl border bg-background/60 p-4 sm:p-5"><div className="mb-3"><h3 className="text-sm font-medium">{curveMetric} vs baseline</h3><p className="mt-1 text-xs text-muted-foreground">{run.lifecycle === "running" ? "New points appear here live as they are logged." : `Every recorded ${curveMetric} point across the shared step range.`}</p></div><RunCurveChart run={run} baseline={baselineRun} metric={curveMetric} /></section> : null}
     {run.result_visualization ? <section><div className="mb-3"><h3 className="text-sm font-medium">{run.result_visualization.name}</h3><p className="mt-1 text-xs text-muted-foreground">{run.result_visualization.description || "Experiment-specific result visualization."}</p></div><VisualizationRenderer visualization={run.result_visualization} /></section> : null}
     {metricEntries.length ? <section><h3 className="mb-3 text-sm font-medium">{run.metric_mode === "timings" ? "Timing results" : "Metrics"}</h3><div className="grid gap-3 sm:grid-cols-2">{metricEntries.map(([name, summary]) => <div key={name} className="rounded-lg border p-5"><span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{name.replaceAll("_", " ")}</span><strong className={`mt-2 block font-mono ${run.metric_mode === "timings" || run.metric_mode === "scalar" ? "text-4xl tracking-tight" : "text-2xl"}`}>{summary.latest}</strong><small className="mt-2 block text-muted-foreground">{summary.count} {summary.count === 1 ? "point" : "points"} · range {summary.min}–{summary.max}</small></div>)}</div></section> : null}
     {run.result_summary || run.conclusion ? <section className="rounded-lg border bg-muted/40 p-5"><h3 className="text-sm font-medium">Conclusion</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">{run.conclusion || run.result_summary}</p></section> : null}
@@ -77,7 +106,12 @@ function RunDetails({ run, baselineRun, metric, reload }: { run: Run; baselineRu
 export function RecordDetailDialog({ selection, slug, baselineId, metric, onClose }: { selection: RecordSelection; slug: string; baselineId: string | null; metric: string; onClose: () => void }) {
   const [record, setRecord] = useState<Experiment | Run | null>(null)
   const [baselineRun, setBaselineRun] = useState<Run | null>(null)
+  const recordRef = useRef<Experiment | Run | null>(null)
   const selectedRunning = Boolean(record && "change_summary" in record && record.lifecycle === "running")
+
+  useEffect(() => {
+    recordRef.current = record
+  }, [record])
 
   useEffect(() => {
     if (!selection) return
@@ -95,18 +129,34 @@ export function RecordDetailDialog({ selection, slug, baselineId, metric, onClos
   }, [baselineId, onClose, selection, slug])
 
   useEffect(() => {
-    if (!selection) return
-    const refresh = () => (selection.kind === "run" ? runtrace.run(selection.id) : runtrace.experiment(slug, selection.id)).then(setRecord).catch(() => undefined)
-    const interval = window.setInterval(refresh, 2_000)
-    const source = selection.kind === "run" && selectedRunning ? new EventSource(`/api/v1/runs/${selection.id}/stream`) : null
-    source?.addEventListener("metric", refresh)
-    source?.addEventListener("status", (event) => {
-      const status = JSON.parse((event as MessageEvent).data) as { lifecycle: string }
-      if (status.lifecycle !== "running") refresh()
+    if (!selection || selection.kind !== "run" || !selectedRunning) return
+    const refresh = () => runtrace.run(selection.id).then(setRecord).catch(() => undefined)
+    const current = recordRef.current as Run | null
+    const metricIds = Object.values(current?.metrics ?? {}).flatMap((series) => series.points.map((point) => point.id))
+    const eventIds = current?.events?.map((event) => event.id) ?? []
+    const params = new URLSearchParams({
+      after_metric_id: String(Math.max(0, ...metricIds)),
+      after_event_id: String(Math.max(0, ...eventIds)),
     })
+    const source = new EventSource(`/api/v1/runs/${selection.id}/stream?${params}`)
+    source.addEventListener("metric", (event) => {
+      const point = JSON.parse((event as MessageEvent).data) as StreamMetric
+      setRecord((value) => value && "change_summary" in value ? appendMetric(value, point) : value)
+    })
+    source.addEventListener("event", (event) => {
+      const item = JSON.parse((event as MessageEvent).data) as StreamEvent
+      setRecord((value) => value && "change_summary" in value ? appendEvent(value, item) : value)
+    })
+    source.addEventListener("status", (event) => {
+      const status = JSON.parse((event as MessageEvent).data) as Pick<Run, "lifecycle" | "disposition">
+      setRecord((value) => value && "change_summary" in value ? { ...value, ...status } : value)
+      if (status.lifecycle !== "running") void refresh()
+    })
+    source.onerror = () => { void refresh() }
+    const interval = window.setInterval(refresh, 15_000)
     return () => {
       window.clearInterval(interval)
-      source?.close()
+      source.close()
     }
   }, [selectedRunning, selection, slug])
 

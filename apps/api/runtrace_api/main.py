@@ -281,7 +281,7 @@ def metric_summary(run: Run) -> dict:
             "min": min(point.value for point in points),
             "max": max(point.value for point in points),
             "count": len(points),
-            "points": [{"value": p.value, "step": p.step, "timestamp": p.timestamp} for p in points],
+            "points": [{"id": p.id, "value": p.value, "step": p.step, "timestamp": p.timestamp} for p in points],
         }
         for name, points in grouped.items()
     }
@@ -1554,10 +1554,10 @@ def dashboard(project: str, session: Session = Depends(get_db)) -> dict:
 
 
 @app.get("/api/v1/runs/{identifier}/stream")
-async def stream_run(identifier: str):
+async def stream_run(identifier: str, after_metric_id: int = 0, after_event_id: int = 0):
     async def events():
-        last_metric_id = 0
-        last_event_id = 0
+        last_metric_id = after_metric_id
+        last_event_id = after_event_id
         while True:
             with SessionLocal() as session:
                 run = session.scalar(select(Run).where(or_(Run.id == identifier, Run.display_id == identifier)))

@@ -4,7 +4,7 @@ import { useState, type KeyboardEvent } from "react"
 
 import type { Run } from "@/lib/types"
 
-type CurvePoint = { value: number; step: number | null; timestamp: string }
+type CurvePoint = { id: number; value: number; step: number | null; timestamp: string }
 
 function formatValue(value: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value)

@@ -174,7 +174,7 @@ If the RunTrace CLI is already installed, `runtrace integrations install codex` 
 | `RUNTRACE_MAX_ARTIFACT_SIZE` | Maximum upload size in bytes |
 | `RUNTRACE_CLAIM_TIMEOUT_SECONDS` | Age at which abandoned claims are requeued |
 
-Compose disables embeddings by default to keep the base deployment lightweight. See [the deployment guide](docs/README.md), [authentication guide](docs/auth.md), and [integration guide](docs/integrations.md) before exposing an instance beyond localhost.
+Compose disables embeddings by default to keep the base deployment lightweight. See [the live metrics guide](docs/live-metrics.md), [deployment guide](docs/README.md), [authentication guide](docs/auth.md), and [integration guide](docs/integrations.md) before exposing an instance beyond localhost.
 
 ## Verification
 

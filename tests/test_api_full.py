@@ -156,3 +156,18 @@ def test_completed_run_stream_emits_metrics_and_terminal_status(fresh_database):
     assert "event: metric" in response.text
     assert 'event: status' in response.text
     assert '"lifecycle": "completed"' in response.text
+
+
+def test_run_stream_can_resume_after_known_metric_and_event_ids(fresh_database):
+    run = fresh_database.get("/api/v1/runs/RUN-168").json()
+    metric_id = max(point["id"] for series in run["metrics"].values() for point in series["points"])
+    event_id = max((event["id"] for event in run["events"]), default=0)
+
+    response = fresh_database.get(
+        f"/api/v1/runs/RUN-168/stream?after_metric_id={metric_id}&after_event_id={event_id}"
+    )
+
+    assert response.status_code == 200
+    assert "event: metric" not in response.text
+    assert "event: event" not in response.text
+    assert "event: status" in response.text

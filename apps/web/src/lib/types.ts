@@ -46,7 +46,7 @@ export interface MetricSeries {
   min: number
   max: number
   count: number
-  points: Array<{ value: number; step: number | null; timestamp: string }>
+  points: Array<{ id: number; value: number; step: number | null; timestamp: string }>
 }
 
 export interface Run {

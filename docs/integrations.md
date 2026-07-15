@@ -2,6 +2,8 @@
 
 RunTrace clients connect to a deployed RunTrace API. Normal mode requires an agent token; create one in the web app under **Access → Your agent tokens**. Authenticate once for the CLI and MCP plugins:
 
+For complete create, log, watch, and finish examples for every client, see the [live metrics guide](live-metrics.md).
+
 ```bash
 runtrace auth "rt_..." --base-url "https://runtrace.example.com"
 ```
