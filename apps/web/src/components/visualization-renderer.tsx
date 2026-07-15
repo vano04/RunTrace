@@ -76,10 +76,13 @@ function VisualizationChart({ node, rows }: { node: RTVisNode; rows: Row[] }) {
 
   const groups = Array.from(new Set(points.map((point) => point.series)))
   const yMin = Math.min(0, ...points.map((point) => point.y)), yMax = Math.max(0, ...points.map((point) => point.y)), ySpan = yMax - yMin || 1
-  const xFor = (index: number) => left + (points.length === 1 ? .5 : index / (points.length - 1)) * (width - left - right)
+  const plotWidth = width - left - right
+  const xFor = (index: number) => node.chart === "bar"
+    ? left + ((index + .5) / points.length) * plotWidth
+    : left + (points.length === 1 ? .5 : index / (points.length - 1)) * plotWidth
   const yFor = (value: number) => top + (yMax - value) / ySpan * (height - top - bottom)
   const paths = groups.map((group) => ({ group, points: points.filter((point) => point.series === group) }))
-  const barWidth = Math.max(3, (width - left - right) / Math.max(points.length, 1) * .7)
+  const barWidth = Math.max(3, plotWidth / Math.max(points.length, 1) * .7)
   const activeIndex = hovered ?? pinned
   const activePoint = activeIndex === null ? null : points.find((point) => point.index === activeIndex) ?? null
   const activeX = activePoint ? xFor(points.indexOf(activePoint)) : 0
