@@ -166,6 +166,7 @@ def _identity_payload(identity: Identity) -> dict[str, Any]:
         "last_active_at": identity.last_active_at,
         "created_at": identity.created_at,
         "password_set": bool(identity.password_hash),
+        "onboarding_completed": identity.onboarding_completed_at is not None,
     }
 
 
@@ -346,8 +347,27 @@ def auth_status(request: Request, session: Session = Depends(get_db)) -> dict[st
             "role": principal.role,
             "status": principal.status,
             "password_set": True if principal.dev else bool(identity and identity.password_hash),
+            "onboarding_completed": True if principal.dev else bool(identity and identity.onboarding_completed_at),
         },
     }
+
+
+@router.post("/onboarding/complete")
+def complete_onboarding(
+    request: Request,
+    session: Session = Depends(get_db),
+    _: AuthPrincipal = Depends(_principal),
+) -> dict[str, bool]:
+    principal = request.state.identity
+    if principal.dev:
+        return {"onboarding_completed": True}
+    identity = session.get(Identity, principal.id)
+    if not identity:
+        raise HTTPException(404, "Identity not found")
+    if identity.onboarding_completed_at is None:
+        identity.onboarding_completed_at = now_utc()
+        session.commit()
+    return {"onboarding_completed": True}
 
 
 @router.post("/bootstrap", status_code=201)

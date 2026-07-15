@@ -5,6 +5,7 @@ import { Check, KeyRound, LoaderCircle, LockKeyhole, ShieldCheck, Users } from "
 import { toast } from "sonner"
 
 import { RunTraceLogo } from "@/components/runtrace-logo"
+import { OnboardingTour } from "@/components/onboarding-tour"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -116,5 +117,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   if (!status) return <main className="grid min-h-screen place-items-center"><LoaderCircle className="size-6 animate-spin text-muted-foreground" aria-label="Loading RunTrace" /></main>
   if (!status.authenticated || !value) return <SetupScreen status={status} onComplete={refresh} />
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={value}>
+    {children}
+    {!value.identity.onboarding_completed ? <OnboardingTour onComplete={refresh} /> : null}
+  </AuthContext.Provider>
 }

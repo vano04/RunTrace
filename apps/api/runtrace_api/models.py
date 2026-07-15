@@ -56,6 +56,7 @@ class Identity(Base):
     setup_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     setup_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 

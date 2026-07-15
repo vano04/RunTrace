@@ -9,6 +9,7 @@ export interface AuthIdentity {
   role: IdentityRole
   status: IdentityStatus
   password_set?: boolean
+  onboarding_completed: boolean
   last_active_at?: string | null
   created_at?: string
 }
@@ -58,6 +59,7 @@ export const auth = {
     body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
   }),
   logout: () => api<void>("/api/v1/auth/logout", { method: "POST" }),
+  completeOnboarding: () => api<{ onboarding_completed: boolean }>("/api/v1/auth/onboarding/complete", { method: "POST" }),
   identities: () => api<AuthIdentity[]>("/api/v1/auth/identities", { cache: "no-store" }),
   createIdentity: (body: { username: string; role: "admin" | "member" }) => api<{ identity: AuthIdentity; setup_token: string; setup_path: string }>("/api/v1/auth/identities", { method: "POST", body: JSON.stringify(body) }),
   updateIdentity: (id: string, body: { role?: "admin" | "member"; status?: "active" | "suspended" }) => api<AuthIdentity>(`/api/v1/auth/identities/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

@@ -39,6 +39,13 @@ def test_owner_bootstrap_and_password_login(fresh_database, monkeypatch):
     })
     assert created.status_code == 201
     assert created.json()["identity"]["password_set"] is True
+    assert created.json()["identity"]["onboarding_completed"] is False
+    assert fresh_database.get("/api/v1/auth/status").json()["identity"]["onboarding_completed"] is False
+
+    completed = fresh_database.post("/api/v1/auth/onboarding/complete")
+    assert completed.status_code == 200
+    assert completed.json() == {"onboarding_completed": True}
+    assert fresh_database.get("/api/v1/auth/status").json()["identity"]["onboarding_completed"] is True
     assert fresh_database.get("/api/v1/projects").status_code == 200
 
     with SessionLocal() as session:
@@ -53,6 +60,7 @@ def test_owner_bootstrap_and_password_login(fresh_database, monkeypatch):
         "password": "correct horse battery staple",
     })
     assert signed_in.status_code == 200
+    assert fresh_database.get("/api/v1/auth/status").json()["identity"]["onboarding_completed"] is True
     assert fresh_database.get("/api/v1/projects").status_code == 200
 
     changed = fresh_database.post("/api/v1/auth/password", json={
