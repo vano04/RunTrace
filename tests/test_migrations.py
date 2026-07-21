@@ -41,8 +41,8 @@ def test_existing_native_database_is_upgraded_to_current_schema(monkeypatch, tmp
     assert {"password_hash", "username"}.issubset(identity_columns)
     assert "name" not in identity_columns
     assert {"project_memberships", "api_token_projects"}.issubset(tables)
-    assert revision == "0012_identity_onboarding"
-    assert "onboarding_completed_at" in identity_columns
+    assert revision == "0013_identity_locale"
+    assert {"onboarding_completed_at", "locale"}.issubset(identity_columns)
     assert "result_visualization_types" in tables
     assert "visualizations" in tables
 

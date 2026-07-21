@@ -1,5 +1,8 @@
+"use client"
+
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/components/i18n-provider"
 
 const styles: Record<string, string> = {
   proposed: "border-status-proposed/30 bg-status-proposed/8 text-status-proposed",
@@ -13,5 +16,7 @@ const styles: Record<string, string> = {
 }
 
 export function StatusBadge({ value, className }: { value: string; className?: string }) {
-  return <Badge variant="outline" className={cn("capitalize", styles[value], className)}>{value}</Badge>
+  const { t } = useI18n()
+  const translated = value in styles ? t(value as keyof typeof styles & Parameters<typeof t>[0]) : value
+  return <Badge variant="outline" className={cn("capitalize", styles[value], className)}>{translated}</Badge>
 }

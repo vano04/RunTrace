@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Skeleton } from "@/components/ui/skeleton"
 import { runtrace } from "@/lib/api"
 import type { Artifact } from "@/lib/types"
+import { useI18n } from "@/components/i18n-provider"
 
 const textSuffixes = [".cfg", ".conf", ".csv", ".env", ".ini", ".json", ".jsonl", ".log", ".md", ".out", ".stderr", ".stdout", ".toml", ".txt", ".yaml", ".yml"]
 
@@ -36,6 +37,7 @@ function formatSize(size: number) {
 }
 
 export function ArtifactFiles({ artifacts }: { artifacts: Artifact[] }) {
+  const { t } = useI18n()
   const [selected, setSelected] = useState<Artifact | null>(null)
   const [preview, setPreview] = useState<{ content: string; truncated: boolean } | null>(null)
   const [pending, setPending] = useState(false)
@@ -43,7 +45,7 @@ export function ArtifactFiles({ artifacts }: { artifacts: Artifact[] }) {
   async function openPreview(artifact: Artifact) {
     setSelected(artifact); setPreview(null); setPending(true)
     try { setPreview(await runtrace.previewArtifact(artifact.id)) }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Could not preview artifact"); setSelected(null) }
+    catch (error) { toast.error(error instanceof Error ? error.message : t("Could not preview artifact")); setSelected(null) }
     finally { setPending(false) }
   }
 
@@ -56,16 +58,17 @@ export function ArtifactFiles({ artifacts }: { artifacts: Artifact[] }) {
     </div>)}</div>
     <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null) }}>
       <DialogContent className="sm:max-w-3xl">
-        <DialogHeader><DialogTitle>{selected?.name || "Artifact preview"}</DialogTitle><DialogDescription>{selected?.content_type} · preview limited to 500 KB</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{selected?.name || t("Artifact preview")}</DialogTitle><DialogDescription>{selected?.content_type} · {t("Preview limited to 500 KB")}</DialogDescription></DialogHeader>
         {pending ? <Skeleton className="h-80" /> : <pre className="max-h-[65vh] overflow-auto rounded-lg bg-muted p-4 font-mono text-xs leading-5 whitespace-pre-wrap">{preview?.content}</pre>}
-        {preview?.truncated ? <p className="text-xs text-muted-foreground">Preview truncated. Download the file to inspect the remainder.</p> : null}
-        <DialogFooter showCloseButton>{selected ? <Button variant="outline" render={<a href={`/api/v1/artifacts/${selected.id}/download`} download />}><Download data-icon="inline-start" />Download</Button> : null}</DialogFooter>
+        {preview?.truncated ? <p className="text-xs text-muted-foreground">{t("Preview truncated. Download the file to inspect the remainder.")}</p> : null}
+        <DialogFooter showCloseButton>{selected ? <Button variant="outline" render={<a href={`/api/v1/artifacts/${selected.id}/download`} download />}><Download data-icon="inline-start" />{t("Download")}</Button> : null}</DialogFooter>
       </DialogContent>
     </Dialog>
   </>
 }
 
 export function ArtifactUploadDialog({ runId, onUploaded }: { runId: string; onUploaded: () => void }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [kind, setKind] = useState("artifact")
@@ -74,20 +77,20 @@ export function ArtifactUploadDialog({ runId, onUploaded }: { runId: string; onU
     event.preventDefault()
     if (!file) return
     setPending(true)
-    try { await runtrace.uploadArtifact(runId, file, kind); toast.success("Artifact saved"); setOpen(false); setFile(null); onUploaded() }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Could not upload artifact") }
+    try { await runtrace.uploadArtifact(runId, file, kind); toast.success(t("Artifact saved")); setOpen(false); setFile(null); onUploaded() }
+    catch (error) { toast.error(error instanceof Error ? error.message : t("Could not upload artifact")) }
     finally { setPending(false) }
   }
   return <Dialog open={open} onOpenChange={setOpen}>
-    <DialogTrigger render={<Button type="button" variant="outline" size="sm" />}><FilePlus2 data-icon="inline-start" />Add artifact</DialogTrigger>
+    <DialogTrigger render={<Button type="button" variant="outline" size="sm" />}><FilePlus2 data-icon="inline-start" />{t("Add artifact")}</DialogTrigger>
     <DialogContent>
       <form onSubmit={submit}>
-        <DialogHeader><DialogTitle>Add run artifact</DialogTitle><DialogDescription>Save a log, configuration, result, checkpoint, or any other evidence file with this run.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{t("Add run artifact")}</DialogTitle><DialogDescription>{t("Save a log, configuration, result, checkpoint, or any other evidence file with this run.")}</DialogDescription></DialogHeader>
         <FieldGroup className="py-5">
-          <Field><FieldLabel htmlFor="artifact-file">File</FieldLabel><Input id="artifact-file" type="file" required onChange={(event) => setFile(event.target.files?.[0] || null)} /><FieldDescription>Files remain downloadable; supported text formats can also be viewed inline.</FieldDescription></Field>
-          <Field><FieldLabel>Artifact type</FieldLabel><Select value={kind} onValueChange={(value) => value && setKind(String(value))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="artifact">General artifact</SelectItem><SelectItem value="log">Log / output</SelectItem><SelectItem value="config">Configuration</SelectItem></SelectGroup></SelectContent></Select></Field>
+          <Field><FieldLabel htmlFor="artifact-file">{t("File")}</FieldLabel><Input id="artifact-file" type="file" required onChange={(event) => setFile(event.target.files?.[0] || null)} /><FieldDescription>{t("Files remain downloadable; supported text formats can also be viewed inline.")}</FieldDescription></Field>
+          <Field><FieldLabel>{t("Artifact type")}</FieldLabel><Select value={kind} onValueChange={(value) => value && setKind(String(value))}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="artifact">{t("General artifact")}</SelectItem><SelectItem value="log">{t("Log / output")}</SelectItem><SelectItem value="config">{t("Configuration")}</SelectItem></SelectGroup></SelectContent></Select></Field>
         </FieldGroup>
-        <DialogFooter showCloseButton><Button type="submit" disabled={pending || !file}>{pending ? "Saving…" : "Save artifact"}</Button></DialogFooter>
+        <DialogFooter showCloseButton><Button type="submit" disabled={pending || !file}>{pending ? t("Saving…") : t("Save artifact")}</Button></DialogFooter>
       </form>
     </DialogContent>
   </Dialog>

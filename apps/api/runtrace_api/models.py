@@ -57,6 +57,7 @@ class Identity(Base):
     setup_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    locale: Mapped[str] = mapped_column(String(16), default="en", server_default="en")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 

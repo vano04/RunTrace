@@ -60,6 +60,10 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=12, max_length=1024)
 
 
+class IdentityPreferencesUpdateRequest(BaseModel):
+    locale: Literal["en", "zh-Hans", "zh-Hant", "es", "pt-BR", "fr", "de", "ja", "ko", "ru", "hi"]
+
+
 class IdentityCreateRequest(BaseModel):
     username: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
     role: Literal["admin", "member"] = "member"
@@ -167,6 +171,7 @@ def _identity_payload(identity: Identity) -> dict[str, Any]:
         "created_at": identity.created_at,
         "password_set": bool(identity.password_hash),
         "onboarding_completed": identity.onboarding_completed_at is not None,
+        "locale": identity.locale,
     }
 
 
@@ -348,8 +353,28 @@ def auth_status(request: Request, session: Session = Depends(get_db)) -> dict[st
             "status": principal.status,
             "password_set": True if principal.dev else bool(identity and identity.password_hash),
             "onboarding_completed": True if principal.dev else bool(identity and identity.onboarding_completed_at),
+            "locale": "en" if principal.dev else (identity.locale if identity else "en"),
         },
     }
+
+
+@router.patch("/preferences")
+def update_identity_preferences(
+    body: IdentityPreferencesUpdateRequest,
+    request: Request,
+    session: Session = Depends(get_db),
+    _: AuthPrincipal = Depends(_principal),
+) -> dict[str, Any]:
+    principal = request.state.identity
+    if principal.dev:
+        return {"locale": "en"}
+    identity = session.get(Identity, principal.id)
+    if not identity:
+        raise HTTPException(404, "Identity not found")
+    identity.locale = body.locale
+    session.commit()
+    session.refresh(identity)
+    return _identity_payload(identity)
 
 
 @router.post("/onboarding/complete")

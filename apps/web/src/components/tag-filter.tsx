@@ -5,6 +5,7 @@ import { Filter, Minus, Plus, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { useI18n } from "@/components/i18n-provider"
 
 type FilterState = "include" | "exclude" | "neutral"
 
@@ -14,6 +15,7 @@ export function TagFilter({ tags, include, exclude, onChange }: {
   exclude: string[]
   onChange: (include: string[], exclude: string[]) => void
 }) {
+  const { t } = useI18n()
   const stateFor = (tag: string): FilterState => include.includes(tag) ? "include" : exclude.includes(tag) ? "exclude" : "neutral"
   const setState = (tag: string, state: FilterState) => onChange(
     state === "include" ? [...include.filter((value) => value !== tag), tag] : include.filter((value) => value !== tag),
@@ -25,11 +27,11 @@ export function TagFilter({ tags, include, exclude, onChange }: {
   return <div className="flex flex-wrap items-center gap-2">
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" />}>
-        <Filter data-icon="inline-start" />Filter{active.length ? ` (${active.length})` : ""}
+        <Filter data-icon="inline-start" />{t("Filter")}{active.length ? ` (${active.length})` : ""}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72 p-3">
         <DropdownMenuGroup>
-          <DropdownMenuLabel className="px-0 pb-2 pt-0">Click to include, exclude, or clear</DropdownMenuLabel>
+          <DropdownMenuLabel className="px-0 pb-2 pt-0">{t("Click to include, exclude, or clear")}</DropdownMenuLabel>
           {tags.length ? <div className="flex flex-col gap-1">
           {tags.map((tag) => {
             const state = stateFor(tag)
@@ -41,10 +43,10 @@ export function TagFilter({ tags, include, exclude, onChange }: {
             >
               {state === "include" ? <Plus /> : state === "exclude" ? <Minus /> : <span className="size-4" />}
               <span className="flex-1">{tag}</span>
-              <Badge variant={state === "include" ? "default" : state === "exclude" ? "destructive" : "outline"}>{state}</Badge>
+              <Badge variant={state === "include" ? "default" : state === "exclude" ? "destructive" : "outline"}>{t(state)}</Badge>
             </DropdownMenuItem>
           })}
-          </div> : <p className="text-xs text-muted-foreground">No filters registered</p>}
+          </div> : <p className="text-xs text-muted-foreground">{t("No filters registered")}</p>}
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

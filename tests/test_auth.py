@@ -46,6 +46,13 @@ def test_owner_bootstrap_and_password_login(fresh_database, monkeypatch):
     assert completed.status_code == 200
     assert completed.json() == {"onboarding_completed": True}
     assert fresh_database.get("/api/v1/auth/status").json()["identity"]["onboarding_completed"] is True
+    assert fresh_database.get("/api/v1/auth/status").json()["identity"]["locale"] == "en"
+
+    preferences = fresh_database.patch("/api/v1/auth/preferences", json={"locale": "ru"})
+    assert preferences.status_code == 200
+    assert preferences.json()["locale"] == "ru"
+    assert fresh_database.get("/api/v1/auth/status").json()["identity"]["locale"] == "ru"
+    assert fresh_database.patch("/api/v1/auth/preferences", json={"locale": "xx"}).status_code == 422
     assert fresh_database.get("/api/v1/projects").status_code == 200
 
     with SessionLocal() as session:

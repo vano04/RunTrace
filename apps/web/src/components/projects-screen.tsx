@@ -20,11 +20,13 @@ import { runtrace } from "@/lib/api"
 import type { Project } from "@/lib/types"
 import { useAutoRefresh } from "@/lib/use-auto-refresh"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/components/i18n-provider"
 
 export function ProjectsScreen() {
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [query, setQuery] = useState("")
   const { compactRows } = useAppearance()
+  const { locale, t } = useI18n()
 
   const load = useCallback(async () => {
     try {
@@ -34,10 +36,10 @@ export function ProjectsScreen() {
 
   useEffect(() => {
     runtrace.projects().then(setProjects).catch((error) => {
-      toast.error(error instanceof Error ? error.message : "Could not load projects")
+      toast.error(error instanceof Error ? error.message : t("Could not load projects"))
       setProjects([])
     })
-  }, [])
+  }, [t])
   useAutoRefresh(load)
 
   const filtered = useMemo(() => (projects ?? [])
@@ -52,7 +54,7 @@ export function ProjectsScreen() {
       <header className="flex h-16 items-center justify-between border-b">
         <RunTraceLogo />
         <div className="flex items-center gap-1">
-          <Button variant="ghost" render={<Link href="/docs" />} nativeButton={false}><BookOpen data-icon="inline-start" />Docs</Button>
+          <Button variant="ghost" render={<Link href="/docs" />} nativeButton={false}><BookOpen data-icon="inline-start" />{t("Docs")}</Button>
           <AppSettingsDialog />
           <AccountMenu />
         </div>
@@ -60,9 +62,9 @@ export function ProjectsScreen() {
       <section className="py-8 sm:py-12">
         <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
           <div className="flex flex-col gap-2">
-            <Badge variant="outline" className="w-fit">Research registry</Badge>
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Pick up where the research left off.</h1>
-            <p className="max-w-2xl text-muted-foreground">Every project keeps experiments, agent decisions, metrics, and conclusions in one durable workspace.</p>
+            <Badge variant="outline" className="w-fit">{t("Research registry")}</Badge>
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{t("Pick up where the research left off.")}</h1>
+            <p className="max-w-2xl text-muted-foreground">{t("Every project keeps experiments, agent decisions, metrics, and conclusions in one durable workspace.")}</p>
           </div>
           <CreateProjectDialog onCreated={(project) => setProjects((current) => [project, ...(current ?? [])])} />
         </div>
@@ -73,19 +75,19 @@ export function ProjectsScreen() {
           <Empty className="min-h-96 border">
             <EmptyHeader>
               <EmptyMedia variant="icon"><FolderKanban /></EmptyMedia>
-              <EmptyTitle>No projects yet</EmptyTitle>
-              <EmptyDescription>Create your first registry, then connect an agent through the SDK, CLI, HTTP API, or MCP.</EmptyDescription>
+              <EmptyTitle>{t("No projects yet")}</EmptyTitle>
+              <EmptyDescription>{t("Create your first registry, then connect an agent through the SDK, CLI, HTTP API, or MCP.")}</EmptyDescription>
             </EmptyHeader>
             <EmptyContent><CreateProjectDialog onCreated={(project) => setProjects([project])} /></EmptyContent>
           </Empty>
         ) : (
           <Card className="mb-8 sm:mb-12">
             <CardHeader>
-              <CardTitle>Your projects</CardTitle>
+              <CardTitle>{t("Your projects")}</CardTitle>
               <CardDescription>{projects.length} projects · {activeRuns} active runs · {experimentCount} experiment records</CardDescription>
               <CardAction>
                 <InputGroup className="w-64 max-w-[42vw]">
-                  <InputGroupInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects" aria-label="Search projects" />
+                  <InputGroupInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Search projects")} aria-label={t("Search projects")} />
                   <InputGroupAddon><Search /></InputGroupAddon>
                 </InputGroup>
               </CardAction>
@@ -102,12 +104,12 @@ export function ProjectsScreen() {
                             <span className="truncate">{project.name}</span>
                             <ArrowRight className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
                           </CardTitle>
-                          <CardDescription className="line-clamp-2 min-h-10">{project.description || "No project goal yet"}</CardDescription>
+                          <CardDescription className="line-clamp-2 min-h-10">{project.description || t("No project goal yet")}</CardDescription>
                         </CardHeader>
                         <CardFooter className="mt-auto justify-between gap-3 text-xs text-muted-foreground">
-                          <span><strong className="font-mono text-foreground">{project.active_runs ?? 0}</strong> active</span>
-                          <span><strong className="font-mono text-foreground">{project.experiment_count ?? 0}</strong> records</span>
-                          <span>Updated {new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(project.updated_at))}</span>
+                          <span><strong className="font-mono text-foreground">{project.active_runs ?? 0}</strong> {t("active")}</span>
+                          <span><strong className="font-mono text-foreground">{project.experiment_count ?? 0}</strong> {t("records")}</span>
+                          <span>{t("Updated")} {new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(project.updated_at))}</span>
                         </CardFooter>
                       </Card>
                     </Link>
@@ -117,7 +119,7 @@ export function ProjectsScreen() {
                 <Empty className="min-h-56">
                   <EmptyHeader>
                     <EmptyMedia variant="icon"><Search /></EmptyMedia>
-                    <EmptyTitle>No matching projects</EmptyTitle>
+                    <EmptyTitle>{t("No matching projects")}</EmptyTitle>
                     <EmptyDescription>No project matches “{query}”.</EmptyDescription>
                   </EmptyHeader>
                 </Empty>

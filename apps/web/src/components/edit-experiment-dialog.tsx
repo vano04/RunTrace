@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from "@/components/ui/textarea"
 import { runtrace } from "@/lib/api"
 import type { ExperimentResultVisualizationType } from "@/lib/types"
+import { useI18n } from "@/components/i18n-provider"
 
 const fallbackResultTypes = [{ key: "curve", name: "Curve" }, { key: "timings", name: "Timings" }, { key: "scalar", name: "Scalar" }, { key: "bar", name: "Bar chart" }, { key: "none", name: "None" }]
 
@@ -22,6 +23,7 @@ export function EditExperimentDialog({ slug, id, open, onOpenChange, onUpdated }
   onOpenChange: (open: boolean) => void
   onUpdated: () => void
 }) {
+  const { t } = useI18n()
   const [experiment, setExperiment] = useState<Awaited<ReturnType<typeof runtrace.experiment>> | null>(null)
   const [pending, setPending] = useState(false)
   const [title, setTitle] = useState("")
@@ -44,10 +46,10 @@ export function EditExperimentDialog({ slug, id, open, onOpenChange, onUpdated }
       setMetricMode(item.metric_mode)
       setResultTypes(types)
     }).catch((error) => {
-      if (active) toast.error(error instanceof Error ? error.message : "Could not load experiment")
+      if (active) toast.error(error instanceof Error ? error.message : t("Could not load experiment"))
     })
     return () => { active = false }
-  }, [id, open, slug])
+  }, [id, open, slug, t])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -60,11 +62,11 @@ export function EditExperimentDialog({ slug, id, open, onOpenChange, onUpdated }
         implementation_details: details,
         metric_mode: metricMode,
       })
-      toast.success("Experiment updated")
+      toast.success(t("Experiment updated"))
       onOpenChange(false)
       onUpdated()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update experiment")
+      toast.error(error instanceof Error ? error.message : t("Could not update experiment"))
     } finally {
       setPending(false)
     }
@@ -79,22 +81,22 @@ export function EditExperimentDialog({ slug, id, open, onOpenChange, onUpdated }
         {experiment ? <form onSubmit={submit} className="contents">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><FlaskConical className="size-4 text-primary" />Edit {experiment.display_id}</DialogTitle>
-            <DialogDescription>Update the proposal without changing its place in the shared experiment queue.</DialogDescription>
+            <DialogDescription>{t("Update the proposal without changing its place in the shared experiment queue.")}</DialogDescription>
           </DialogHeader>
           <FieldGroup>
-            <Field><FieldLabel htmlFor="edit-experiment-title">Title</FieldLabel><Input id="edit-experiment-title" value={title} onChange={(event) => setTitle(event.target.value)} required autoFocus /></Field>
-            <Field><FieldLabel htmlFor="edit-hypothesis">Hypothesis</FieldLabel><Textarea id="edit-hypothesis" value={hypothesis} onChange={(event) => setHypothesis(event.target.value)} required /></Field>
-            <Field><FieldLabel htmlFor="edit-reasoning">Reasoning</FieldLabel><Textarea id="edit-reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value)} /></Field>
-            <Field><FieldLabel htmlFor="edit-implementation">Implementation details</FieldLabel><Textarea id="edit-implementation" value={details} onChange={(event) => setDetails(event.target.value)} /></Field>
-            <Field><FieldLabel>Result display</FieldLabel>
+            <Field><FieldLabel htmlFor="edit-experiment-title">{t("Title")}</FieldLabel><Input id="edit-experiment-title" value={title} onChange={(event) => setTitle(event.target.value)} required autoFocus /></Field>
+            <Field><FieldLabel htmlFor="edit-hypothesis">{t("Hypothesis")}</FieldLabel><Textarea id="edit-hypothesis" value={hypothesis} onChange={(event) => setHypothesis(event.target.value)} required /></Field>
+            <Field><FieldLabel htmlFor="edit-reasoning">{t("Reasoning")}</FieldLabel><Textarea id="edit-reasoning" value={reasoning} onChange={(event) => setReasoning(event.target.value)} /></Field>
+            <Field><FieldLabel htmlFor="edit-implementation">{t("Implementation details")}</FieldLabel><Textarea id="edit-implementation" value={details} onChange={(event) => setDetails(event.target.value)} /></Field>
+            <Field><FieldLabel>{t("Result display")}</FieldLabel>
               <Select value={metricMode} onValueChange={(value) => setMetricMode(value ?? "curve")}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectGroup>{(resultTypes.length ? resultTypes : fallbackResultTypes).map((item) => <SelectItem key={item.key} value={item.key}>{item.name}</SelectItem>)}</SelectGroup></SelectContent>
               </Select>
             </Field>
           </FieldGroup>
-          <DialogFooter><Button type="submit" disabled={pending || !title.trim() || !hypothesis.trim()}>{pending ? "Saving…" : "Save changes"}</Button></DialogFooter>
-        </form> : <div className="py-8 text-center text-sm text-muted-foreground">Loading experiment…</div>}
+          <DialogFooter><Button type="submit" disabled={pending || !title.trim() || !hypothesis.trim()}>{pending ? t("Saving…") : t("Save changes")}</Button></DialogFooter>
+        </form> : <div className="py-8 text-center text-sm text-muted-foreground">{t("Loading experiment…")}</div>}
       </DialogContent>
     </Dialog>
   )
