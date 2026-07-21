@@ -53,6 +53,27 @@ The [complete feature catalog](docs/features.md) lists every current-source web,
 | MCP server | `apps/mcp` | Python MCP SDK |
 | Database | Compose service | PostgreSQL 17 with pgvector |
 
+## How Codex was used
+
+OpenAI Codex with GPT-5.6 was the primary AI engineering collaborator during RunTrace's development. The human developer supplied the product direction, constraints, acceptance criteria, and review; Codex helped turn those decisions into working code and repeatedly tested the result. This was an iterative engineering process rather than a one-shot code generation pass.
+
+Codex worked across the full repository: it traced behavior through the FastAPI service, database models and migrations, Next.js interface, Python SDK and CLI, MCP server, Docker setup, release workflows, and documentation. It implemented and debugged cross-cutting features such as live metric streaming, run ownership and attachment, authentication and project authorization, custom visualizations, responsive layouts, localization, demo modes, and persistent user settings. Because a change in one interface often affects every other client, Codex was also used to keep HTTP, Python, CLI, MCP, UI, and documentation contracts aligned.
+
+The most notable tools and integrations were:
+
+| Codex capability | How it contributed |
+| --- | --- |
+| Coding and terminal tools | Inspected the repository, edited source and documentation, managed development services, and ran focused tests plus full Python, web, package, Compose, and release checks. |
+| Browser | Exercised the live application with accessible-role interactions and DOM snapshots; changed viewport sizes; inspected console output and layout measurements; and captured before/after screenshots. This exposed issues that static review missed, including mobile record dialogs, fixed-width charts, horizontal overflow, and live-update behavior. |
+| Computer Use | Controlled Chrome and macOS applications when page-level browser automation was not enough. It supported window-level visual QA, screen-capture experiments, and preparation of product-tour media. |
+| Product Design plugin | Guided a responsive UX audit across desktop, mobile, and portrait-monitor layouts. Its recommendations were implemented and then verified in the browser, including full-screen mobile details, responsive charts, compact metadata, stable close controls, and removal of unintended page overflow. |
+| GitHub plugin | Worked with `codex/` branches and pull requests, monitored GitHub Actions, and verified release assets. It was used for production hardening, the 0.1.4 release, and the 0.1.5 public-repository hygiene release across GitHub Releases, PyPI, and GHCR. |
+| RunTrace plugin and MCP tools | Dogfooded RunTrace from Codex itself: retrieving project context, searching prior evidence, exercising experiment lifecycles, streaming metrics and events, and creating or validating project visualizations. That feedback loop helped refine both the product and its agent workflow. |
+
+Codex also used separate focused tasks for agent-facing QA. Those tasks tested MCP memory retrieval, single-owner experiment lifecycles, CLI and SDK subprocess tracking, saved authentication, run attachment, failure closure, and visualization import/export against live instances. Synthetic fixtures were kept under `RunTraceDemo`, while reproducible regression coverage was added to the main test suites.
+
+Generated changes were accepted only after evidence appropriate to their risk: unit and integration tests, lint and type checks, production builds, migration and Compose checks, browser interaction tests, visual inspection, or public artifact verification. Representative public milestones are [production hardening in PR #1](https://github.com/vano04/RunTrace/pull/1), [release 0.1.4 in PR #2](https://github.com/vano04/RunTrace/pull/2), and [the 0.1.5 repository-hygiene release in PR #3](https://github.com/vano04/RunTrace/pull/3).
+
 ## Quick start
 
 Requirements: Docker with Compose support. From the repository root:
