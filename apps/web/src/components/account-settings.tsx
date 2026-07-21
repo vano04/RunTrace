@@ -6,6 +6,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { AccountMenu } from "@/components/account-menu"
+import { AppearanceSettings } from "@/components/appearance-settings"
 import { useAuth } from "@/components/auth-provider"
 import { RunTraceLogo } from "@/components/runtrace-logo"
 import { Button } from "@/components/ui/button"
@@ -27,9 +28,10 @@ export function AccountSettings() {
 
   return <main className="min-h-screen">
     <header className="flex h-16 items-center justify-between border-b px-4 sm:px-8"><div className="flex items-center gap-3"><RunTraceLogo /><span className="h-5 w-px bg-border" /><Button variant="ghost" render={<Link href="/" />} nativeButton={false}><ArrowLeft data-icon="inline-start" />{t("Projects")}</Button></div><AccountMenu /></header>
-    <section className="mx-auto w-full max-w-xl px-4 py-10 sm:px-8 sm:py-16">
-      <h1 className="text-3xl font-semibold tracking-tight">{t("Account")}</h1>
+    <section className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-8 sm:py-16">
+      <h1 className="text-3xl font-semibold tracking-tight">{t("Settings")}</h1>
       <p className="mt-2 text-muted-foreground">{t("Signed in as")} <strong className="font-medium text-foreground">{identity.username}</strong>.</p>
+      <div className="mt-8"><AppearanceSettings /></div>
       <div className="mt-8 rounded-xl border bg-card p-6 shadow-sm">
         <div className="flex items-start gap-3"><Languages className="mt-0.5 size-5 text-muted-foreground" /><div><h2 className="text-xl font-semibold">{t("Language")}</h2><p className="mt-1 text-sm text-muted-foreground">{t("Your language preference follows your account across devices.")}</p></div></div>
         <div className="mt-5 space-y-2"><Label htmlFor="account-language">{t("Language")}</Label><Select value={locale} onValueChange={(value) => {

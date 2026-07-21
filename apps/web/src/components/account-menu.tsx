@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { KeyRound, LogOut, ShieldCheck } from "lucide-react"
+import { LogOut, Settings, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
 
 import { useAuth } from "@/components/auth-provider"
@@ -27,7 +27,7 @@ export function AccountMenu() {
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link href="/access" />}><ShieldCheck />{identity.role === "member" ? t("Agent tokens") : t("Access")}</DropdownMenuItem>
-        <DropdownMenuItem render={<Link href="/account" />}><KeyRound />{identity.password_set === false ? t("Set password") : t("Change password")}</DropdownMenuItem>
+        <DropdownMenuItem render={<Link href="/account" />}><Settings />{t("Settings")}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={() => signOut().catch(() => toast.error(t("Could not sign out")))}><LogOut />{t("Sign out")}</DropdownMenuItem>
       </DropdownMenuContent>

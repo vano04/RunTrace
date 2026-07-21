@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { ArrowRight, BookOpen, FolderKanban, Search } from "lucide-react"
 import { toast } from "sonner"
 
-import { AppSettingsDialog } from "@/components/app-settings-dialog"
+import { AppSettingsLink } from "@/components/app-settings-link"
 import { AccountMenu } from "@/components/account-menu"
 import { useAppearance } from "@/components/appearance-provider"
 import { CreateProjectDialog } from "@/components/create-project-dialog"
@@ -55,7 +55,7 @@ export function ProjectsScreen() {
         <RunTraceLogo />
         <div className="flex items-center gap-1">
           <Button variant="ghost" render={<Link href="/docs" />} nativeButton={false}><BookOpen data-icon="inline-start" />{t("Docs")}</Button>
-          <AppSettingsDialog />
+          <AppSettingsLink />
           <AccountMenu />
         </div>
       </header>
