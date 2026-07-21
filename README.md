@@ -173,13 +173,13 @@ Open <http://localhost:3000>. The server proxies `/api/*` to
 You do not need to clone the repository on an agent or application host. Install the lightweight CLI from PyPI:
 
 ```bash
-uv tool install mono-ai
+uv tool install mono-research
 ```
 
 For Python applications:
 
 ```bash
-python -m pip install mono-ai
+python -m pip install mono-research
 ```
 
 In normal mode, create a token at **Access → Your agent tokens**, then authenticate the CLI and installed MCP plugin:
@@ -209,7 +209,7 @@ Agent loops should claim one proposal at a time. When `create_run` starts a pend
 Run the MCP server over stdio without a persistent install:
 
 ```bash
-uvx --from 'mono-ai[mcp]==0.1.6' mono-mcp
+uvx --from 'mono-research[mcp]==0.1.6' mono-mcp
 ```
 
 Public packages can lag this checkout. To exercise the exact current source during development, use `uv run --extra mcp mono-mcp`.

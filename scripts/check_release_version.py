@@ -37,7 +37,7 @@ def main() -> None:
     require_version("pyproject.toml", project_version, expected)
 
     lock_packages = read_toml("uv.lock")["package"]
-    locked_project = next(package for package in lock_packages if package["name"] == "mono-ai")
+    locked_project = next(package for package in lock_packages if package["name"] == "mono-research")
     require_version("uv.lock", locked_project["version"], expected)
 
     web_package = read_json("apps/web/package.json")
@@ -58,7 +58,7 @@ def main() -> None:
     require_version("Claude plugin", claude_plugin["version"], expected)
     require_version("Codex plugin", codex_plugin["version"], expected)
 
-    package_spec = f"mono-ai[mcp]=={expected}"
+    package_spec = f"mono-research[mcp]=={expected}"
     claude_args = claude_plugin["mcpServers"]["mono"]["args"]
     codex_args = mcp_config["mcpServers"]["mono"]["args"]
     if package_spec not in claude_args or package_spec not in codex_args:

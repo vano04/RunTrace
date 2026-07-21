@@ -1,5 +1,5 @@
 [project]
-name = "mono-ai"
+name = "mono-research"
 version = "0.1.6"
 description = "Persistent experiment memory for autonomous research agents"
 readme = "README.md"

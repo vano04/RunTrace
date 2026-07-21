@@ -21,7 +21,7 @@ app.add_typer(integrations_app, name="integrations")
 
 def version_callback(value: bool) -> None:
     if value:
-        typer.echo(f"mono {package_version('mono-ai')}")
+        typer.echo(f"mono {package_version('mono-research')}")
         raise typer.Exit()
 
 

@@ -115,7 +115,7 @@ MONO_EVENT level=info message="checkpoint saved"`}</Code>
 
         <DocSection id="mcp" title={t("MCP server")} icon={Braces}>
           <p>{t("Run the stdio server to let coding agents retrieve context, propose and claim work, log live evidence, and finish runs without custom integration code.")}</p>
-          <Code>{`uvx --from 'mono-ai[mcp]==0.1.6' mono-mcp
+          <Code>{`uvx --from 'mono-research[mcp]==0.1.6' mono-mcp
 
 # Typical agent sequence
 get_project_context({ project: "dense-optimizer" })
@@ -128,7 +128,7 @@ finish_run({ run_id: "run_...", disposition: "kept", result_summary: "...", conc
 
         <DocSection id="plugins" title={t("Codex and Claude Code")} icon={Plug}>
           <p>{rich("Install the PyPI tool and repository marketplace from either CLI. The plugin bundles the Mono skill, starts the authenticated MCP server with {command}, and rereads the CLI's saved credential on every request.", { command: <code className="rounded bg-muted px-1.5 py-0.5">uvx</code> })}</p>
-          <Code>{`uv tool install mono-ai
+          <Code>{`uv tool install mono-research
 
 # Codex app and CLI
 codex plugin marketplace add vano04/Mono --ref master

@@ -43,7 +43,7 @@ def test_cli_version():
     result = runner.invoke(cli.app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.stdout.strip() == f"mono {package_version('mono-ai')}"
+    assert result.stdout.strip() == f"mono {package_version('mono-research')}"
 
 
 def test_cli_search_and_context_commands(monkeypatch):

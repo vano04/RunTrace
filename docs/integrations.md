@@ -36,14 +36,14 @@ The token is displayed once by Mono and stored by the server only as a SHA-256 d
 Install the lightweight CLI from PyPI without cloning the repository:
 
 ```bash
-uv tool install mono-ai
+uv tool install mono-research
 mono --help
 ```
 
 For an isolated one-off invocation:
 
 ```bash
-uvx --from mono-ai \
+uvx --from mono-research \
   mono search PROJECT "prior evidence"
 ```
 
@@ -52,7 +52,7 @@ Tagged releases attach a wheel and source distribution to GitHub Releases and pu
 ## Python package
 
 ```bash
-python -m pip install mono-ai
+python -m pip install mono-research
 ```
 
 ```python
@@ -83,7 +83,7 @@ The SDK attaches to that running record and refuses inaccessible, closed, or cro
 ## Codex plugin
 
 ```bash
-uv tool install mono-ai
+uv tool install mono-research
 codex plugin marketplace add vano04/Mono --ref master
 codex plugin add mono@mono
 mono auth rt_mono_dev --base-url http://localhost:8000
@@ -106,7 +106,7 @@ Use `export_visualization` to retrieve a versioned `mono-visualization` JSON doc
 ## Claude Code plugin
 
 ```bash
-uv tool install mono-ai
+uv tool install mono-research
 claude plugin marketplace add vano04/Mono
 claude plugin install mono@mono --scope user
 mono auth rt_mono_dev --base-url http://localhost:8000
@@ -119,7 +119,7 @@ Or run `mono integrations install claude`, then run `mono auth`.
 Any stdio MCP host can run:
 
 ```bash
-uvx --from 'mono-ai[mcp]==0.1.6' mono-mcp
+uvx --from 'mono-research[mcp]==0.1.6' mono-mcp
 ```
 
 The host needs `uv` plus either credentials saved by `mono auth` or the `MONO_BASE_URL` and `MONO_API_TOKEN` environment variables. Its first launch needs network access to GitHub and the Python package index.

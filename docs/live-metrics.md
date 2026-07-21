@@ -25,7 +25,7 @@ Use a stable metric name and monotonically increasing integer steps. A run accep
 Install the package:
 
 ```bash
-python -m pip install mono-ai
+python -m pip install mono-research
 ```
 
 The context manager creates the run, records Git and host metadata, reports a crash when the block raises, and finishes an unclosed run when the block exits. Call `log_metric` for one series or `log_metrics` to batch values that share a step.
@@ -147,7 +147,7 @@ curl --fail \
 Install the Mono plugin for Codex or Claude Code, or configure any stdio MCP host to run:
 
 ```bash
-uvx --from 'mono-ai[mcp]==0.1.6' mono-mcp
+uvx --from 'mono-research[mcp]==0.1.6' mono-mcp
 ```
 
 An agent can then use this sequence:

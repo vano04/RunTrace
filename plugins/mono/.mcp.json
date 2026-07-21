@@ -6,7 +6,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "mono-ai[mcp]==0.1.6",
+        "mono-research[mcp]==0.1.6",
         "mono-mcp"
       ],
       "env_vars": ["MONO_BASE_URL", "MONO_API_TOKEN"]

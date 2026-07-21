@@ -297,7 +297,7 @@ Visualization endpoints:
 
 ## Python SDK
 
-The `mono-ai` Python package supports:
+The `mono-research` Python package supports:
 
 - Explicit base URL and token, `api_key` compatibility alias, and strict or best-effort behavior.
 - Project search plus a project-creation helper for development mode; fixed-grant production bearer tokens cannot create projects.
